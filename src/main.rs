@@ -1,4 +1,7 @@
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    sync::mpsc::{self, Receiver},
+};
 
 use iced::{Length, Task, widget};
 
@@ -7,6 +10,8 @@ use crate::stylesheet::{
     styles::{LauncherThemeColor, LauncherThemeLightness, Theme},
 };
 
+mod init;
+mod state;
 #[allow(unused)]
 mod stylesheet;
 
@@ -14,6 +19,7 @@ pub const FONT_MONO: iced::Font = iced::Font::with_name("JetBrains Mono");
 pub const FONT_DEFAULT: iced::Font = iced::Font::with_name("Inter");
 
 type Element<'a> = iced::Element<'a, Message, Theme>;
+type WEvent = whatsapp_rust::types::events::Event;
 
 #[derive(Debug, Clone)]
 enum Message {
@@ -23,10 +29,12 @@ enum Message {
 
 struct App {
     theme: Theme,
+    event_recv: Receiver<WEvent>,
 }
 
 impl App {
     pub fn create() -> (Self, Task<Message>) {
+        let (sender, receiver) = mpsc::channel();
         (
             Self {
                 theme: Theme {
@@ -35,14 +43,19 @@ impl App {
                     alpha: 1.0,
                     system_dark_mode: true,
                 },
+                event_recv: receiver,
             },
-            Task::none(),
+            Task::perform(init::init(sender), |()| Message::CoreTick),
         )
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::CoreTick => {}
+            Message::CoreTick => {
+                while let Ok(event) = self.event_recv.try_recv() {
+                    println!("{:?}", event);
+                }
+            }
             Message::CoreEvent(_event, _status) => {}
         }
         Task::none()

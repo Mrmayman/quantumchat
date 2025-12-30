@@ -15,6 +15,7 @@ iced = { version = "0.13", default-features = false, features = [
 ] }
 serde = { version = "1", features = ["derive"] }
 tokio = "1"
+whatsapp-rust = "0.2"
 
 [profile.dev.package."*"]
 opt-level = 3
