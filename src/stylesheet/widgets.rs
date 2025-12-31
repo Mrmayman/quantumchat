@@ -484,3 +484,16 @@ impl widget::pane_grid::Catalog for Theme {
         }
     }
 }
+
+impl widget::qr_code::Catalog for Theme {
+    type Class<'a> = ();
+
+    fn default<'a>() -> Self::Class<'a> {}
+
+    fn style(&self, style: &()) -> widget::qr_code::Style {
+        widget::qr_code::Style {
+            cell: iced::Color::BLACK,
+            background: iced::Color::WHITE,
+        }
+    }
+}

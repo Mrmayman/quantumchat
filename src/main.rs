@@ -3,17 +3,18 @@ use std::{
     sync::mpsc::{self, Receiver},
 };
 
-use iced::{Length, Task, widget};
+use iced::Task;
 
-use crate::stylesheet::{
-    color::Color,
-    styles::{LauncherThemeColor, LauncherThemeLightness, Theme},
+use crate::{
+    state::{MenuLogin, State},
+    stylesheet::styles::{LauncherThemeColor, LauncherThemeLightness, Theme},
 };
 
 mod init;
 mod state;
 #[allow(unused)]
 mod stylesheet;
+mod view;
 
 pub const FONT_MONO: iced::Font = iced::Font::with_name("JetBrains Mono");
 pub const FONT_DEFAULT: iced::Font = iced::Font::with_name("Inter");
@@ -30,6 +31,7 @@ enum Message {
 struct App {
     theme: Theme,
     event_recv: Receiver<WEvent>,
+    state: State,
 }
 
 impl App {
@@ -44,6 +46,7 @@ impl App {
                     system_dark_mode: true,
                 },
                 event_recv: receiver,
+                state: State::Loading,
             },
             Task::perform(init::init(sender), |()| Message::CoreTick),
         )
@@ -53,7 +56,7 @@ impl App {
         match message {
             Message::CoreTick => {
                 while let Ok(event) = self.event_recv.try_recv() {
-                    println!("{:?}", event);
+                    self.handle_event(event);
                 }
             }
             Message::CoreEvent(_event, _status) => {}
@@ -61,12 +64,19 @@ impl App {
         Task::none()
     }
 
-    pub fn view(&self) -> Element<'_> {
-        widget::container(widget::column!["hello there!"].padding(10))
-            .style(|t: &Theme| t.style_container_sharp_box(0.0, Color::Dark))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+    fn handle_event(&mut self, event: WEvent) {
+        if let WEvent::PairingQrCode { code, timeout } = &event {
+            self.state = match MenuLogin::new(code.clone(), timeout.clone()) {
+                Ok(menu) => State::Login(menu),
+                Err(err) => State::Error(format!("While generating login QR:\n{err}")),
+            };
+            return;
+        }
+        if let State::Loading | State::Login(_) = &self.state {
+            self.state = State::Chats;
+            return;
+        }
+        println!("{:?}", event);
     }
 
     #[allow(clippy::unused_self)]
