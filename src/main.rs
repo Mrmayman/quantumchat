@@ -7,11 +7,14 @@ use iced::Task;
 
 use crate::{
     state::{MenuLogin, State},
+    storage::{Data, contact::Jid},
     stylesheet::styles::{LauncherThemeColor, LauncherThemeLightness, Theme},
 };
 
+mod core;
 mod init;
 mod state;
+mod storage;
 #[allow(unused)]
 mod stylesheet;
 mod view;
@@ -32,11 +35,16 @@ struct App {
     theme: Theme,
     event_recv: Receiver<WEvent>,
     state: State,
+    db: Data,
 }
 
 impl App {
     pub fn create() -> (Self, Task<Message>) {
         let (sender, receiver) = mpsc::channel();
+        println!("Starting up");
+
+        let db = Data::new().unwrap();
+
         (
             Self {
                 theme: Theme {
@@ -47,6 +55,7 @@ impl App {
                 },
                 event_recv: receiver,
                 state: State::Loading,
+                db,
             },
             Task::perform(init::init(sender), |()| Message::CoreTick),
         )
@@ -76,7 +85,26 @@ impl App {
             self.state = State::Chats;
             return;
         }
-        println!("{:?}", event);
+
+        match event {
+            WEvent::ContactUpdate(contact) => att(self.db.add_contact(contact)),
+            WEvent::MuteUpdate(mute) => att(self.db.add_mute(
+                Jid {
+                    user: mute.jid.user,
+                    server: mute.jid.server,
+                },
+                mute.action.muted(),
+                // TODO: mute expiry date
+            )),
+            WEvent::JoinedGroup(_) => {}
+            _ => {
+                let message = format!("{event:?}")
+                    .split(',')
+                    .filter(|n| n.contains(['}', '{', '(', ')', '[', ']']) || !n.contains(": None"))
+                    .collect::<String>();
+                println!("{message}\n");
+            }
+        }
     }
 
     #[allow(clippy::unused_self)]
@@ -141,4 +169,10 @@ fn load_fonts() -> Vec<Cow<'static, [u8]>> {
             .as_slice()
             .into(),
     ]
+}
+
+fn att<T>(r: Result<T, String>) {
+    if let Err(e) = r {
+        println!("Error: {}", e);
+    }
 }
