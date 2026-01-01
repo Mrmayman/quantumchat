@@ -6,12 +6,13 @@ use std::{
 use iced::Task;
 
 use crate::{
-    state::{MenuLogin, State},
+    state::{MenuChats, MenuLogin, State},
     storage::{Data, contact::Jid},
     stylesheet::styles::{LauncherThemeColor, LauncherThemeLightness, Theme},
 };
 
 mod core;
+mod icons;
 mod init;
 mod state;
 mod storage;
@@ -29,6 +30,8 @@ type WEvent = whatsapp_rust::types::events::Event;
 enum Message {
     CoreTick,
     CoreEvent(iced::event::Event, iced::event::Status),
+    SidebarResize(f32),
+    ChatSelected(Jid),
 }
 
 struct App {
@@ -54,7 +57,7 @@ impl App {
                     system_dark_mode: true,
                 },
                 event_recv: receiver,
-                state: State::Loading,
+                state: State::Chats(MenuChats::new()),
                 db,
             },
             Task::perform(init::init(sender), |()| Message::CoreTick),
@@ -69,6 +72,18 @@ impl App {
                 }
             }
             Message::CoreEvent(_event, _status) => {}
+            Message::SidebarResize(ratio) => {
+                if let State::Chats(menu) = &mut self.state {
+                    if let Some(split) = menu.sidebar_split {
+                        menu.sidebar_grid_state.resize(split, ratio);
+                    }
+                }
+            }
+            Message::ChatSelected(jid) => {
+                if let State::Chats(menu) = &mut self.state {
+                    menu.selected = Some(jid);
+                }
+            }
         }
         Task::none()
     }
@@ -81,22 +96,20 @@ impl App {
             };
             return;
         }
-        if let State::Loading | State::Login(_) = &self.state {
-            self.state = State::Chats;
+        if let State::Login(_) = &self.state {
+            self.state = State::Chats(MenuChats::new());
             return;
         }
 
         match event {
             WEvent::ContactUpdate(contact) => att(self.db.add_contact(contact)),
             WEvent::MuteUpdate(mute) => att(self.db.add_mute(
-                Jid {
-                    user: mute.jid.user,
-                    server: mute.jid.server,
-                },
+                mute.jid.into(),
                 mute.action.muted(),
                 // TODO: mute expiry date
             )),
             WEvent::JoinedGroup(_) => {}
+            WEvent::PinUpdate(pin) => att(self.db.add_pin(pin.jid.into(), pin.action.pinned())),
             _ => {
                 let message = format!("{event:?}")
                     .split(',')

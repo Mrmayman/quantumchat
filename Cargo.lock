@@ -3188,10 +3188,12 @@ version = "0.1.0"
 dependencies = [
  "dirs",
  "iced",
+ "paste",
  "serde",
  "serde_json",
  "sled",
  "tokio",
+ "wacore-binary",
  "whatsapp-rust",
 ]
 

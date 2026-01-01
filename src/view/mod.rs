@@ -2,10 +2,10 @@ use iced::{Length, widget};
 use widget::{column, row};
 
 use crate::{
-    App, Element,
-    state::{MenuLogin, State},
+    App, Element, Message, icons,
+    state::{MenuChats, MenuLogin, State},
     stylesheet::{color::Color, styles::Theme},
-    view::components::center,
+    view::components::{center, sbox, sidebar_button, tsubtitle},
 };
 
 mod components;
@@ -13,20 +13,88 @@ mod components;
 impl App {
     pub fn view(&self) -> Element<'_> {
         let view: Element = match &self.state {
-            State::Loading => center("Loading...").into(),
             State::Login(menu) => menu.view(),
-            State::Chats => center("TODO: Add chat functionality").into(),
+            State::Chats(menu) => self.view_chats(menu),
             State::Error(err) => center(column![
                 widget::text("Error").size(20),
                 widget::text(err).size(14),
             ])
             .into(),
         };
-        widget::container(view)
-            .style(|t: &Theme| t.style_container_sharp_box(0.0, Color::Dark))
+        sbox(view, Color::Dark)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
+    }
+
+    pub fn view_chats<'a>(&'a self, menu: &'a MenuChats) -> Element<'a> {
+        widget::pane_grid(&menu.sidebar_grid_state, |_, is_sidebar, _| {
+            if *is_sidebar {
+                sbox(self.view_chats_sidebar(menu), Color::ExtraDark).into()
+            } else {
+                sbox(
+                    widget::column![if menu.selected.is_some() {
+                        "TODO: Implement chat view"
+                    } else {
+                        "Select a chat"
+                    }]
+                    .padding(10),
+                    Color::Dark,
+                )
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+            }
+        })
+        .on_resize(10, |t| Message::SidebarResize(t.ratio))
+        .into()
+    }
+
+    fn view_chats_sidebar<'a>(&'a self, menu: &'a MenuChats) -> Element<'a> {
+        column![
+            row![icons::chatbox_s(20), widget::text("Chats").size(20)]
+                .padding(10)
+                .spacing(10),
+            widget::scrollable(widget::column(
+                self.db
+                    .config
+                    .pins
+                    .iter()
+                    .chain(self.db.order.iter())
+                    .map(|n| {
+                        let Some(contact) = self.db.contacts.get(&n.as_key_str()) else {
+                            return (
+                                n,
+                                widget::row![
+                                    widget::text("?").style(tsubtitle),
+                                    widget::text(&n.user).style(tsubtitle).size(14)
+                                ]
+                                .padding(5)
+                                .spacing(10),
+                            );
+                        };
+
+                        (
+                            n,
+                            widget::row![
+                                icons::chatbox(),
+                                widget::text(contact.get_render_name()).size(14)
+                            ]
+                            .padding(5)
+                            .spacing(10),
+                        )
+                    })
+                    .map(|(n, elem)| sidebar_button(
+                        n,
+                        menu.selected.as_ref(),
+                        elem,
+                        Message::ChatSelected(n.clone())
+                    ))
+            ))
+            .height(Length::Fill)
+            .style(|t: &Theme, s| t.style_scrollable_flat_extra_dark(s))
+        ]
+        .into()
     }
 }
 

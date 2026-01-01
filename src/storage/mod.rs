@@ -1,19 +1,23 @@
 use std::{collections::HashMap, path::PathBuf, sync::LazyLock};
 
-use whatsapp_rust::types::events::ContactUpdate;
-
 use crate::{
     core::IntoStringError,
-    storage::contact::{Contact, Jid},
+    storage::{
+        config::Config,
+        contact::{Contact, Jid},
+    },
 };
 
+pub mod config;
 pub mod contact;
 
 pub static DIR: LazyLock<PathBuf> = LazyLock::new(|| dirs::data_dir().unwrap().join("QuantumChat"));
 
 pub struct Data {
     db: sled::Db,
-    contacts: HashMap<String, Contact>,
+    pub contacts: HashMap<String, Contact>,
+    pub config: Config,
+    pub order: Vec<Jid>,
 }
 
 impl Data {
@@ -32,46 +36,27 @@ impl Data {
             })
             .collect::<Result<HashMap<String, Contact>, String>>()?;
 
-        Ok(Data { db, contacts })
-    }
-
-    pub fn add_contact(&mut self, contact: ContactUpdate) -> Result<(), String> {
-        let tree = self.db.open_tree("contacts").strerr()?;
-
-        let contact = Contact::from(contact);
-        let key = contact.jid.as_key_str();
-        self.contacts.insert(key.clone(), contact.clone());
-        let value = serde_json::to_vec(&contact).strerr()?;
-
-        tree.insert(key, value).strerr()?;
-
-        Ok(())
-    }
-
-    pub fn add_mute(&mut self, jid: Jid, muted: bool) -> Result<(), String> {
-        let tree = self.db.open_tree("contacts").strerr()?;
-        let key = jid.as_key_str();
-
-        if let Some(contact) = tree.get(&key).strerr()? {
-            let mut contact = serde_json::from_slice::<Contact>(&contact).strerr()?;
-            contact.muted = muted;
-            let value = serde_json::to_vec(&contact).strerr()?;
-            self.contacts.insert(key.clone(), contact.clone());
-            tree.insert(key, value).strerr()?;
+        let config = if let Ok(Some(config)) = db.get("config") {
+            serde_json::from_slice::<Config>(&config).strerr()?
         } else {
-            // Contact doesn't exist, likely a group
-            let contact = Contact {
-                full_name: None,
-                first_name: None,
-                jid,
-                lid_jid: None,
-                muted,
-            };
-            self.contacts.insert(key.clone(), contact.clone());
-            let value = serde_json::to_vec(&contact).strerr()?;
-            tree.insert(key, value).strerr()?;
-        }
+            let config = Config { pins: Vec::new() };
+            db.insert("config", serde_json::to_vec(&config).strerr()?)
+                .strerr()?;
+            config
+        };
 
-        Ok(())
+        let order = contacts
+            .keys()
+            .cloned()
+            .map(|n| Jid::from_key(&n))
+            .filter(|n| !config.pins.contains(n))
+            .collect();
+
+        Ok(Data {
+            db,
+            contacts,
+            config,
+            order,
+        })
     }
 }
