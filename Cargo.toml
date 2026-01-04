@@ -22,6 +22,8 @@ tokio = "1"
 
 whatsapp-rust = "0.2"
 wacore-binary = "0.2"
+waproto = "0.2"
+
 sled = "0.34"
 dirs = "6"
 

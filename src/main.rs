@@ -6,7 +6,7 @@ use std::{
 use iced::Task;
 
 use crate::{
-    state::{MenuChats, MenuLogin, State},
+    state::{ChatUI, MenuChats, MenuLogin, State},
     storage::{Data, contact::Jid},
     stylesheet::styles::{LauncherThemeColor, LauncherThemeLightness, Theme},
 };
@@ -57,7 +57,7 @@ impl App {
                     system_dark_mode: true,
                 },
                 event_recv: receiver,
-                state: State::Chats(MenuChats::new()),
+                state: State::Chats(MenuChats::new(), None),
                 db,
             },
             Task::perform(init::init(sender), |()| Message::CoreTick),
@@ -73,15 +73,15 @@ impl App {
             }
             Message::CoreEvent(_event, _status) => {}
             Message::SidebarResize(ratio) => {
-                if let State::Chats(menu) = &mut self.state {
+                if let State::Chats(menu, _) = &mut self.state {
                     if let Some(split) = menu.sidebar_split {
                         menu.sidebar_grid_state.resize(split, ratio);
                     }
                 }
             }
-            Message::ChatSelected(jid) => {
-                if let State::Chats(menu) = &mut self.state {
-                    menu.selected = Some(jid);
+            Message::ChatSelected(chat_id) => {
+                if let State::Chats(_, ui) = &mut self.state {
+                    *ui = Some(ChatUI { selected: chat_id });
                 }
             }
         }
@@ -97,19 +97,22 @@ impl App {
             return;
         }
         if let State::Login(_) = &self.state {
-            self.state = State::Chats(MenuChats::new());
+            self.state = State::Chats(MenuChats::new(), None);
             return;
         }
 
         match event {
             WEvent::ContactUpdate(contact) => att(self.db.add_contact(contact)),
-            WEvent::MuteUpdate(mute) => att(self.db.add_mute(
-                mute.jid.into(),
-                mute.action.muted(),
-                // TODO: mute expiry date
-            )),
+            WEvent::MuteUpdate(mute) => {
+                // TODO: mute.action.mute_end_timestamp
+                att(self.db.operate_on_contact(mute.jid.into(), |contact| {
+                    contact.muted = mute.action.muted()
+                }))
+            }
             WEvent::JoinedGroup(_) => {}
             WEvent::PinUpdate(pin) => att(self.db.add_pin(pin.jid.into(), pin.action.pinned())),
+            WEvent::Message(msg, msg_info) => att(self.db.add_message(&msg, msg_info)),
+            WEvent::LoggedOut(_) => {} // TODO
             _ => {
                 let message = format!("{event:?}")
                     .split(',')

@@ -37,6 +37,7 @@ impl From<wacore_binary::jid::Jid> for Jid {
 pub struct Contact {
     pub full_name: Option<String>,
     pub first_name: Option<String>,
+    pub display_name: Option<String>,
     pub jid: Jid,
     pub lid_jid: Option<String>,
     pub muted: bool,
@@ -46,7 +47,9 @@ impl Contact {
     pub fn get_render_name(&self) -> String {
         self.full_name
             .clone()
-            .unwrap_or(self.first_name.clone().unwrap_or(self.jid.user.clone()))
+            .or_else(|| self.first_name.clone())
+            .or_else(|| self.display_name.clone())
+            .unwrap_or(self.jid.user.clone())
     }
 }
 
@@ -55,6 +58,7 @@ impl From<ContactUpdate> for Contact {
         Contact {
             full_name: event.action.full_name,
             first_name: event.action.first_name,
+            display_name: event.action.username,
             jid: Jid {
                 user: event.jid.user,
                 server: event.jid.server,
@@ -67,40 +71,45 @@ impl From<ContactUpdate> for Contact {
 
 impl Data {
     pub fn add_contact(&mut self, contact: ContactUpdate) -> Result<(), String> {
-        let tree = self.db.open_tree("contacts").strerr()?;
-
         let contact = Contact::from(contact);
         let key = contact.jid.as_key_str();
         self.contacts.insert(key.clone(), contact.clone());
+        if !self.config.pins.contains(&contact.jid) && !self.order.contains(&contact.jid) {
+            self.order.push(contact.jid.clone());
+        }
         let value = serde_json::to_vec(&contact).strerr()?;
 
-        tree.insert(key, value).strerr()?;
+        self.contacts_tree.insert(key, value).strerr()?;
 
         Ok(())
     }
 
-    pub fn add_mute(&mut self, jid: Jid, muted: bool) -> Result<(), String> {
-        let tree = self.db.open_tree("contacts").strerr()?;
+    pub fn operate_on_contact<F>(&mut self, jid: Jid, operation: F) -> Result<(), String>
+    where
+        F: FnOnce(&mut Contact),
+    {
         let key = jid.as_key_str();
 
-        if let Some(contact) = tree.get(&key).strerr()? {
+        if let Some(contact) = self.contacts_tree.get(&key).strerr()? {
             let mut contact = serde_json::from_slice::<Contact>(&contact).strerr()?;
-            contact.muted = muted;
+            operation(&mut contact);
             let value = serde_json::to_vec(&contact).strerr()?;
             self.contacts.insert(key.clone(), contact.clone());
-            tree.insert(key, value).strerr()?;
+            self.contacts_tree.insert(key, value).strerr()?;
         } else {
             // Contact doesn't exist, likely a group
-            let contact = Contact {
+            let mut contact = Contact {
                 full_name: None,
                 first_name: None,
+                display_name: None,
                 jid,
                 lid_jid: None,
-                muted,
+                muted: false,
             };
+            operation(&mut contact);
             self.contacts.insert(key.clone(), contact.clone());
             let value = serde_json::to_vec(&contact).strerr()?;
-            tree.insert(key, value).strerr()?;
+            self.contacts_tree.insert(key, value).strerr()?;
         }
 
         Ok(())

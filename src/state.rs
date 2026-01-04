@@ -6,7 +6,7 @@ use crate::storage::contact::Jid;
 
 pub enum State {
     Login(MenuLogin),
-    Chats(MenuChats),
+    Chats(MenuChats, Option<ChatUI>),
     Error(String),
     // Settings
 }
@@ -30,7 +30,6 @@ impl MenuLogin {
 pub struct MenuChats {
     pub sidebar_grid_state: pane_grid::State<bool>,
     pub sidebar_split: Option<pane_grid::Split>,
-    pub selected: Option<Jid>,
 }
 
 impl MenuChats {
@@ -48,7 +47,10 @@ impl MenuChats {
         Self {
             sidebar_grid_state,
             sidebar_split,
-            selected: None,
         }
     }
+}
+
+pub struct ChatUI {
+    pub selected: Jid,
 }

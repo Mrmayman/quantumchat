@@ -10,12 +10,18 @@ use crate::{
 
 pub mod config;
 pub mod contact;
+pub mod message;
 
 pub static DIR: LazyLock<PathBuf> = LazyLock::new(|| dirs::data_dir().unwrap().join("QuantumChat"));
 
 pub struct Data {
     db: sled::Db,
+
     pub contacts: HashMap<String, Contact>,
+    pub contacts_tree: sled::Tree,
+    pub messages_tiebreaker: u32,
+    pub messages_tree: sled::Tree,
+
     pub config: Config,
     pub order: Vec<Jid>,
 }
@@ -24,6 +30,7 @@ impl Data {
     pub fn new() -> Result<Self, String> {
         let db = sled::open(DIR.join("data")).strerr()?;
         let contacts_tree = db.open_tree("contacts").strerr()?;
+        let messages_tree = db.open_tree("messages").strerr()?;
 
         let contacts = contacts_tree
             .iter()
@@ -55,6 +62,9 @@ impl Data {
         Ok(Data {
             db,
             contacts,
+            contacts_tree,
+            messages_tree,
+            messages_tiebreaker: 0,
             config,
             order,
         })

@@ -1,4 +1,4 @@
-use iced::{Length, widget};
+use iced::{Alignment, Length, widget};
 
 use crate::{
     Element, Message,
@@ -54,4 +54,18 @@ pub fn sbox<'a>(
     color: Color,
 ) -> widget::Container<'a, Message, Theme> {
     widget::container(view).style(move |t: &Theme| t.style_container_sharp_box(0.0, color))
+}
+
+pub fn button_with_icon<'a>(
+    icon: impl Into<Element<'a>>,
+    text: &'a str,
+    size: u16,
+) -> widget::Button<'a, Message, Theme> {
+    widget::button(
+        widget::row![icon.into()]
+            .push_maybe((!text.is_empty()).then_some(widget::text(text).size(size)))
+            .align_y(Alignment::Center)
+            .spacing(size as f32 / 1.6),
+    )
+    .padding([7, 13])
 }

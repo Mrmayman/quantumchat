@@ -3,9 +3,10 @@ use widget::{column, row};
 
 use crate::{
     App, Element, Message, icons,
-    state::{MenuChats, MenuLogin, State},
+    state::{ChatUI, MenuChats, MenuLogin, State},
+    storage::contact::Jid,
     stylesheet::{color::Color, styles::Theme},
-    view::components::{center, sbox, sidebar_button, tsubtitle},
+    view::components::{button_with_icon, center, sbox, sidebar_button, tsubtitle},
 };
 
 mod components;
@@ -14,7 +15,7 @@ impl App {
     pub fn view(&self) -> Element<'_> {
         let view: Element = match &self.state {
             State::Login(menu) => menu.view(),
-            State::Chats(menu) => self.view_chats(menu),
+            State::Chats(menu, ui) => self.view_chats(menu, ui.as_ref()),
             State::Error(err) => center(column![
                 widget::text("Error").size(20),
                 widget::text(err).size(14),
@@ -27,18 +28,39 @@ impl App {
             .into()
     }
 
-    pub fn view_chats<'a>(&'a self, menu: &'a MenuChats) -> Element<'a> {
+    pub fn view_chats<'a>(&'a self, menu: &'a MenuChats, ui: Option<&'a ChatUI>) -> Element<'a> {
         widget::pane_grid(&menu.sidebar_grid_state, |_, is_sidebar, _| {
             if *is_sidebar {
-                sbox(self.view_chats_sidebar(menu), Color::ExtraDark).into()
+                sbox(self.view_chats_sidebar(ui), Color::ExtraDark).into()
             } else {
                 sbox(
-                    widget::column![if menu.selected.is_some() {
-                        "TODO: Implement chat view"
+                    if let Some(ui) = ui {
+                        widget::column![
+                            sbox(
+                                widget::text(self.render_jid(&ui.selected)).size(20),
+                                Color::Dark
+                            )
+                            .padding(5),
+                            widget::horizontal_rule(1),
+                            widget::scrollable(widget::column!["TODO: Implement chat"].padding(10))
+                                .style(|t: &Theme, s| t.style_scrollable_flat_dark(s))
+                                .width(Length::Fill)
+                                .height(Length::Fill),
+                            widget::horizontal_rule(1),
+                            sbox(
+                                widget::row![
+                                    button_with_icon(icons::new_s(14), "", 14),
+                                    widget::text_input("Enter message...", ""),
+                                    button_with_icon(icons::checkmark_s(14), "Send", 14)
+                                ]
+                                .spacing(5),
+                                Color::Dark
+                            )
+                            .padding(5),
+                        ]
                     } else {
-                        "Select a chat"
-                    }]
-                    .padding(10),
+                        widget::column!["Select a chat"].padding(10)
+                    },
                     Color::Dark,
                 )
                 .width(Length::Fill)
@@ -50,7 +72,7 @@ impl App {
         .into()
     }
 
-    fn view_chats_sidebar<'a>(&'a self, menu: &'a MenuChats) -> Element<'a> {
+    fn view_chats_sidebar<'a>(&'a self, ui: Option<&'a ChatUI>) -> Element<'a> {
         column![
             row![icons::chatbox_s(20), widget::text("Chats").size(20)]
                 .padding(10)
@@ -86,7 +108,7 @@ impl App {
                     })
                     .map(|(n, elem)| sidebar_button(
                         n,
-                        menu.selected.as_ref(),
+                        ui.as_ref().map(|n| &n.selected),
                         elem,
                         Message::ChatSelected(n.clone())
                     ))
@@ -95,6 +117,14 @@ impl App {
             .style(|t: &Theme, s| t.style_scrollable_flat_extra_dark(s))
         ]
         .into()
+    }
+
+    pub fn render_jid(&self, jid: &Jid) -> String {
+        self.db
+            .contacts
+            .get(&jid.as_key_str())
+            .map(|n| n.get_render_name())
+            .unwrap_or_else(|| jid.user.clone())
     }
 }
 

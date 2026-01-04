@@ -3194,6 +3194,7 @@ dependencies = [
  "sled",
  "tokio",
  "wacore-binary",
+ "waproto",
  "whatsapp-rust",
 ]
 
