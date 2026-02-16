@@ -11,8 +11,18 @@ pub struct Contact {
     /// - Phone number
     pub name: String,
     pub jid: Jid,
+
+    #[serde(rename = "ism")]
     pub muted: bool,
+    #[serde(rename = "isc")]
+    pub chatted: bool,
+    #[serde(rename = "isg")]
     pub is_group: bool,
+
+    #[serde(rename = "lrmt")]
+    pub last_read_message_time: i64,
+    #[serde(rename = "lmt")]
+    pub last_message_time: i64,
 }
 
 impl Data {
@@ -23,35 +33,42 @@ impl Data {
         let value = serde_json::to_vec(&contact).strerr()?;
 
         self.contacts_tree
-            .insert(contact.jid.0.clone(), value)
+            .insert(contact.jid.to_id(), value)
             .strerr()?;
-        self.contacts.insert(contact.jid.0.clone(), contact);
+        self.contacts.insert(contact.jid.to_id(), contact);
 
         Ok(())
     }
 
-    pub fn operate_on_contact<F>(&mut self, jid: Jid, operation: F) -> Result<(), String>
+    pub fn operate_on_contact<F>(&mut self, jid: &Jid, operation: F) -> Result<(), String>
     where
         F: FnOnce(&mut Contact),
     {
-        if let Some(contact) = self.contacts_tree.get(&jid.0).strerr()? {
+        let jid_raw = jid.to_id();
+        if let Some(contact) = self.contacts_tree.get(&jid_raw).strerr()? {
             let mut contact = serde_json::from_slice::<Contact>(&contact).strerr()?;
             operation(&mut contact);
             let value = serde_json::to_vec(&contact).strerr()?;
-            self.contacts.insert(jid.0.clone(), contact);
-            self.contacts_tree.insert(jid.0, value).strerr()?;
+            self.contacts.insert(jid_raw.clone(), contact);
+            self.contacts_tree.insert(jid_raw, value).strerr()?;
         } else {
             // Contact doesn't exist, likely a group
             let mut contact = Contact {
-                name: jid.0.split('@').next().unwrap_or(jid.0.as_str()).to_owned(),
+                name: jid.number().to_owned(),
                 jid: jid.clone(),
                 muted: false,
                 is_group: false,
+                chatted: true,
+                last_message_time: 0,
+                last_read_message_time: 0,
             };
             operation(&mut contact);
             let value = serde_json::to_vec(&contact).strerr()?;
-            self.contacts_tree.insert(jid.0.clone(), value).strerr()?;
-            self.contacts.insert(jid.0, contact);
+            self.contacts_tree.insert(jid_raw.clone(), value).strerr()?;
+            if !self.config.pins.contains(jid) && !self.order.contains(&contact.jid) {
+                self.order.push(jid.clone());
+            }
+            self.contacts.insert(jid_raw, contact);
         }
 
         Ok(())

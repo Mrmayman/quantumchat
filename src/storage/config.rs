@@ -6,6 +6,13 @@ use crate::{core::IntoStringError, storage::Data};
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Config {
     pub pins: Vec<Jid>,
+    pub self_jid: Option<Jid>,
+}
+
+impl Config {
+    pub fn is_self(&self, jid: &Jid) -> bool {
+        self.self_jid.as_ref().is_some_and(|n| n == jid)
+    }
 }
 
 impl Data {
@@ -17,7 +24,9 @@ impl Data {
             }
         } else {
             self.config.pins.retain(|p| *p != pin);
-            self.order.insert(0, pin);
+            if !self.order.contains(&pin) {
+                self.order.insert(0, pin);
+            }
         }
         self.save_config().strerr()
     }

@@ -1,23 +1,21 @@
 use sipper::sipper;
 use std::{borrow::Cow, sync::Arc};
 use tokio::{
-    sync::{
-        mpsc::{self, UnboundedReceiver as Receiver},
-        Mutex,
-    },
+    sync::{mpsc::UnboundedReceiver as Receiver, Mutex},
     task::spawn_blocking,
 };
 
 use iced::Task;
-use whatsmeow_nchat::{AccountState, ChatEvent, ConnId, Jid};
+use whatsmeow_nchat::{AccountState, ConnId, Jid};
 
 use crate::{
     state::{ChatUI, MenuChats, MenuLogin, State},
-    storage::{contact::Contact, Data, DIR},
+    storage::{Data, DIR},
     stylesheet::styles::{Theme, ThemeColor, ThemeMode},
 };
 
 mod core;
+mod events;
 mod icons;
 mod state;
 mod storage;
@@ -29,15 +27,14 @@ pub const FONT_MONO: iced::Font = iced::Font::with_name("JetBrains Mono");
 pub const FONT_DEFAULT: iced::Font = iced::Font::with_name("Inter");
 
 type Element<'a> = iced::Element<'a, Message, Theme>;
-type WEvent = whatsmeow_nchat::Event;
 type Res<T = ()> = Result<T, String>;
 
 #[derive(Debug, Clone)]
 enum Message {
     Nothing,
-    Connected(Res<(ConnId, Arc<Mutex<Receiver<WEvent>>>)>),
+    Connected(Res<(ConnId, Arc<Mutex<Receiver<whatsmeow_nchat::Event>>>)>),
     CoreTick,
-    WEvent(WEvent),
+    WEvent(whatsmeow_nchat::Event),
     LoggedIn(Res),
     CoreEvent(iced::event::Event, iced::event::Status),
     SidebarResize(f32),
@@ -144,73 +141,6 @@ impl App {
         self.state = State::Error(err);
     }
 
-    fn handle_event(&mut self, event: WEvent) -> Res<Task<Message>> {
-        if let State::Login(_) = &self.state {
-            self.state = State::Chats(MenuChats::new(), None);
-            return Ok(Task::none());
-        }
-        let (id, event) = match event {
-            WEvent::ChatEvent(jid, chat_event) => (jid, chat_event),
-            WEvent::QrCode(code) => {
-                self.go_to_login(code, true);
-                return Ok(Task::none());
-            }
-            WEvent::PairingCode(code) => {
-                self.go_to_login(code, false);
-                return Ok(Task::none());
-            }
-            WEvent::Reinit => {
-                let id = self.id;
-                self.state = State::Loading;
-                return Ok(Task::perform(
-                    tokio::task::spawn_blocking(move || {
-                        whatsmeow_nchat::logout(id).strerr()?;
-                        whatsmeow_nchat::login(id).strerr()?;
-                        Ok::<(), String>(())
-                    }),
-                    |n| Message::LoggedIn(n.strerr().flatten()),
-                ));
-            }
-            _ => {
-                let message = format!("{event:?}")
-                    .split(',')
-                    .filter(|n| n.contains(['}', '{', '(', ')', '[', ']']) || !n.contains(": None"))
-                    .collect::<String>();
-                println!("WEVENT {message}\n");
-                return Ok(Task::none());
-            }
-        };
-
-        match event {
-            ChatEvent::NewContactsNotify {
-                name,
-                phone,
-                is_self,
-                is_group,
-                notify,
-            } => self.db.add_contact(Contact {
-                name,
-                jid: Jid::from_phone_no(&phone),
-                muted: false, // TODO
-                is_group,
-            })?,
-            ChatEvent::NewChatsNotify {
-                is_unread,
-                is_muted,
-                is_pinned,
-                last_message_time,
-            } => println!("CHAT {id:?}: {last_message_time}"),
-            _ => {
-                let message = format!("{event:?}")
-                    .split(',')
-                    .filter(|n| n.contains(['}', '{', '(', ')', '[', ']']) || !n.contains(": None"))
-                    .collect::<String>();
-                println!("WEVENT {id:?} {message}\n");
-            }
-        }
-        Ok(Task::none())
-    }
-
     fn go_to_login(&mut self, code: String, is_qr: bool) {
         self.state = match MenuLogin::new(code.clone(), is_qr) {
             Ok(menu) => State::Login(menu),
@@ -281,12 +211,6 @@ fn load_fonts() -> Vec<Cow<'static, [u8]>> {
             .as_slice()
             .into(),
     ]
-}
-
-fn att<T>(r: Result<T, String>) {
-    if let Err(e) = r {
-        println!("Error: {}", e);
-    }
 }
 
 pub trait IntoStringError<T> {

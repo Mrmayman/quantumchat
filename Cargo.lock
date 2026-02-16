@@ -3239,7 +3239,7 @@ dependencies = [
 [[package]]
 name = "whatsmeow-nchat"
 version = "0.1.0"
-source = "git+https://github.com/Mrmayman/whatsmeow-nchat.git#d4529f6a764bee0b632d12300e6b522bdc14f824"
+source = "git+https://github.com/Mrmayman/whatsmeow-nchat.git#be888c67e4df6039bce3ed1064c45c117ad45768"
 dependencies = [
  "thiserror 2.0.17",
  "tokio",
@@ -3249,7 +3249,7 @@ dependencies = [
 [[package]]
 name = "whatsmeow-nchat-sys"
 version = "0.1.0"
-source = "git+https://github.com/Mrmayman/whatsmeow-nchat.git#d4529f6a764bee0b632d12300e6b522bdc14f824"
+source = "git+https://github.com/Mrmayman/whatsmeow-nchat.git#be888c67e4df6039bce3ed1064c45c117ad45768"
 dependencies = [
  "bindgen",
  "bitflags 2.10.0",

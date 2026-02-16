@@ -1,7 +1,7 @@
-use iced::{widget, Alignment, Length};
+use iced::{widget, Alignment};
 
 use crate::{
-    stylesheet::{color::Color, styles::Theme, widgets::StyleButton},
+    stylesheet::{color::Color, styles::Theme},
     Element, Message,
 };
 
@@ -11,7 +11,7 @@ pub fn center<'a>(child: impl Into<Element<'a>>) -> widget::Container<'a, Messag
         .into()
 }
 
-pub fn sidebar_button<'a, A: PartialEq>(
+/*pub fn sidebar_button<'a, A: PartialEq>(
     current: &A,
     selected: Option<&A>,
     text: impl Into<Element<'a>>,
@@ -24,7 +24,7 @@ pub fn sidebar_button<'a, A: PartialEq>(
         .width(Length::Fill);
 
     underline_maybe(button, Color::SecondDark, !is_selected)
-}
+}*/
 
 pub fn tsubtitle(t: &Theme) -> widget::text::Style {
     t.style_text(Color::SecondLight)

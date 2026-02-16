@@ -1,12 +1,12 @@
-use iced::{widget, Length};
+use iced::{widget, Alignment, Length};
 use whatsmeow_nchat::Jid;
 use widget::{column, row};
 
 use crate::{
     icons,
     state::{ChatUI, MenuChats, MenuLogin, State},
-    stylesheet::{color::Color, styles::Theme},
-    view::components::{button_with_icon, center, sbox},
+    stylesheet::{color::Color, styles::Theme, widgets::StyleButton},
+    view::components::{button_with_icon, center, sbox, tsubtitle, underline_maybe},
     App, Element, Message, FONT_MONO,
 };
 
@@ -35,43 +35,49 @@ impl App {
             if *is_sidebar {
                 sbox(self.view_chats_sidebar(ui), Color::ExtraDark).into()
             } else {
-                sbox(
-                    if let Some(ui) = ui {
-                        widget::column![
-                            // sbox(
-                            //     widget::text(self.render_jid(&ui.selected)).size(20),
-                            //     Color::Dark
-                            // )
-                            // .padding(5),
-                            widget::rule::horizontal(1),
-                            widget::scrollable(widget::column!["TODO: Implement chat"].padding(10))
-                                .style(|t: &Theme, s| t.style_scrollable_flat_dark(s))
-                                .width(Length::Fill)
-                                .height(Length::Fill),
-                            widget::rule::horizontal(1),
-                            sbox(
-                                widget::row![
-                                    button_with_icon(icons::new_s(14), "", 14),
-                                    widget::text_input("Enter message...", ""),
-                                    button_with_icon(icons::checkmark_s(14), "Send", 14)
-                                ]
-                                .spacing(5),
-                                Color::Dark
-                            )
-                            .padding(5),
-                        ]
-                    } else {
-                        widget::column!["Select a chat"].padding(10)
-                    },
-                    Color::Dark,
-                )
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
+                self.view_chats_page(ui).into()
             }
         })
         .on_resize(10, |t| Message::SidebarResize(t.ratio))
         .into()
+    }
+
+    fn view_chats_page<'a>(
+        &'a self,
+        ui: Option<&'a ChatUI>,
+    ) -> widget::Container<'a, Message, Theme> {
+        sbox(
+            if let Some(ui) = ui {
+                widget::column![
+                    sbox(
+                        widget::text(self.render_jid(&ui.selected)).size(20),
+                        Color::Dark
+                    )
+                    .padding(16),
+                    widget::rule::horizontal(1),
+                    widget::scrollable(widget::column!["TODO: Implement chat"].padding(10))
+                        .style(|t: &Theme, s| t.style_scrollable_flat_dark(s))
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                    widget::rule::horizontal(1),
+                    sbox(
+                        widget::row![
+                            button_with_icon(icons::new_s(13), "", 13),
+                            widget::text_input("Enter message...", ""),
+                            button_with_icon(icons::checkmark_s(13), "Send", 13)
+                        ]
+                        .spacing(5),
+                        Color::Dark
+                    )
+                    .padding(5),
+                ]
+            } else {
+                widget::column!["Select a chat"].padding(10)
+            },
+            Color::Dark,
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
     }
 
     fn view_chats_sidebar<'a>(&'a self, ui: Option<&'a ChatUI>) -> Element<'a> {
@@ -79,55 +85,55 @@ impl App {
             row![icons::chatbox_s(20), widget::text("Chats").size(20)]
                 .padding(10)
                 .spacing(10),
-            // widget::scrollable(widget::column(
-            //     self.db
-            //         .config
-            //         .pins
-            //         .iter()
-            //         .chain(self.db.order.iter())
-            //         .map(|n| {
-            //             let Some(contact) = self.db.contacts.get(&n.as_key_str()) else {
-            //                 return (
-            //                     n,
-            //                     widget::row![
-            //                         widget::text("?").style(tsubtitle),
-            //                         widget::text(&n.user).style(tsubtitle).size(14)
-            //                     ]
-            //                     .padding(5)
-            //                     .spacing(10),
-            //                 );
-            //             };
+            widget::scrollable(widget::column(
+                self.db
+                    .config
+                    .pins
+                    .iter()
+                    .chain(self.db.order.iter())
+                    .map(|n| {
+                        let Some(contact) = self.db.contacts.get(&n.to_id()) else {
+                            return (
+                                n,
+                                widget::row![
+                                    widget::text("?").style(tsubtitle).size(14),
+                                    widget::text(n.number()).style(tsubtitle)
+                                ],
+                            );
+                        };
 
-            //             (
-            //                 n,
-            //                 widget::row![
-            //                     icons::chatbox(),
-            //                     widget::text(contact.get_render_name()).size(14)
-            //                 ]
-            //                 .padding(5)
-            //                 .spacing(10),
-            //             )
-            //         })
-            //         .map(|(n, elem)| sidebar_button(
-            //             n,
-            //             ui.as_ref().map(|n| &n.selected),
-            //             elem,
-            //             Message::ChatSelected(n.clone())
-            //         ))
-            // ))
-            // .height(Length::Fill)
-            // .style(|t: &Theme, s| t.style_scrollable_flat_extra_dark(s))
+                        (
+                            n,
+                            widget::row![icons::chatbox_s(14), widget::text(&contact.name)],
+                        )
+                    })
+                    .map(|(n, elem)| {
+                        let is_selected = ui.as_ref().is_some_and(|ui| &ui.selected == n);
+                        let button =
+                            widget::button(elem.align_y(Alignment::Center).padding(5).spacing(10))
+                                .on_press_maybe(
+                                    (!is_selected).then_some(Message::ChatSelected(n.clone())),
+                                )
+                                .style(|n: &Theme, status| {
+                                    n.style_button(status, StyleButton::FlatExtraDark)
+                                })
+                                .width(Length::Fill);
+
+                        underline_maybe(button, Color::SecondDark, !is_selected)
+                    })
+            ))
+            .height(Length::Fill)
+            .style(|t: &Theme, s| t.style_scrollable_flat_extra_dark(s))
         ]
         .into()
     }
 
-    // pub fn render_jid(&self, jid: &Jid) -> String {
-    //     self.db
-    //         .contacts
-    //         .get(&jid.as_key_str())
-    //         .map(|n| n.get_render_name())
-    //         .unwrap_or_else(|| jid.user.clone())
-    // }
+    pub fn render_jid<'a>(&'a self, jid: &'a Jid) -> &'a str {
+        self.db
+            .contacts
+            .get(&jid.to_id())
+            .map_or(jid.number(), |n| &n.name)
+    }
 }
 
 impl MenuLogin {
