@@ -1,9 +1,7 @@
 use serde::{Deserialize, Serialize};
+use whatsmeow_nchat::Jid;
 
-use crate::{
-    core::IntoStringError,
-    storage::{Data, contact::Jid},
-};
+use crate::{core::IntoStringError, storage::Data};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Config {

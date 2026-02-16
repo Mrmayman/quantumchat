@@ -1,10 +1,8 @@
-use std::time::Duration;
-
 use iced::widget::pane_grid;
-
-use crate::storage::contact::Jid;
+use whatsmeow_nchat::Jid;
 
 pub enum State {
+    Loading,
     Login(MenuLogin),
     Chats(MenuChats, Option<ChatUI>),
     Error(String),
@@ -12,17 +10,17 @@ pub enum State {
 }
 
 pub struct MenuLogin {
-    pub timeout: Duration,
-    pub qr_code: iced::widget::qr_code::Data,
-    pub initial_time: std::time::Instant,
+    pub code: String,
+    pub qr_code: Option<iced::widget::qr_code::Data>,
 }
 
 impl MenuLogin {
-    pub fn new(code: String, timeout: Duration) -> Result<Self, iced::widget::qr_code::Error> {
+    pub fn new(code: String, is_qr: bool) -> Result<Self, iced::widget::qr_code::Error> {
         Ok(Self {
-            qr_code: iced::widget::qr_code::Data::new(&code)?,
-            timeout,
-            initial_time: std::time::Instant::now(),
+            qr_code: is_qr
+                .then(|| iced::widget::qr_code::Data::new(&code))
+                .transpose()?,
+            code,
         })
     }
 }

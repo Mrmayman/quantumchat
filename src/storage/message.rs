@@ -1,10 +1,7 @@
 use serde::{Deserialize, Serialize};
-use whatsapp_rust::types::message::MessageInfo;
+use whatsmeow_nchat::Jid;
 
-use crate::{
-    core::IntoStringError,
-    storage::{Data, contact::Jid},
-};
+use crate::{core::IntoStringError, storage::Data};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Msg {
@@ -20,11 +17,7 @@ pub struct Msg {
 }
 
 impl Data {
-    pub fn add_message(
-        &mut self,
-        msg: &waproto::whatsapp::Message,
-        msg_info: MessageInfo,
-    ) -> Result<(), String> {
+    pub fn add_message(&mut self) -> Result<(), String> {
         let chat: Jid = msg_info.source.chat.into();
         let sender: Jid = msg_info.source.sender.into();
         let Some(content) = msg.conversation.clone().or_else(|| {

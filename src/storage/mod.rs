@@ -1,18 +1,21 @@
 use std::{collections::HashMap, path::PathBuf, sync::LazyLock};
 
+use whatsmeow_nchat::Jid;
+
 use crate::{
     core::IntoStringError,
-    storage::{
-        config::Config,
-        contact::{Contact, Jid},
-    },
+    storage::{config::Config, contact::Contact},
 };
 
 pub mod config;
 pub mod contact;
-pub mod message;
+// pub mod message;
 
-pub static DIR: LazyLock<PathBuf> = LazyLock::new(|| dirs::data_dir().unwrap().join("QuantumChat"));
+pub static DIR: LazyLock<PathBuf> = LazyLock::new(|| {
+    let p = dirs::data_dir().unwrap().join("QuantumChat");
+    _ = std::fs::create_dir_all(&p);
+    p
+});
 
 pub struct Data {
     db: sled::Db,
@@ -21,7 +24,6 @@ pub struct Data {
     pub contacts_tree: sled::Tree,
     pub messages_tiebreaker: u32,
     pub messages_tree: sled::Tree,
-
     pub config: Config,
     pub order: Vec<Jid>,
 }
@@ -55,7 +57,7 @@ impl Data {
         let order = contacts
             .keys()
             .cloned()
-            .map(|n| Jid::from_key(&n))
+            .map(|n| Jid(n))
             .filter(|n| !config.pins.contains(n))
             .collect();
 
