@@ -1,5 +1,5 @@
 use sipper::sipper;
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 use tokio::{
     sync::{mpsc::UnboundedReceiver as Receiver, Mutex},
     task::spawn_blocking,
@@ -12,6 +12,7 @@ use crate::{
     state::{ChatUI, MenuChats, MenuLogin, State},
     storage::{Data, DIR},
     stylesheet::styles::{Theme, ThemeColor, ThemeMode},
+    view::chat_buffer::ChatBuffer,
 };
 
 mod core;
@@ -32,13 +33,19 @@ type Res<T = ()> = Result<T, String>;
 #[derive(Debug, Clone)]
 enum Message {
     Nothing,
+    Done(Res),
+
     Connected(Res<(ConnId, Arc<Mutex<Receiver<whatsmeow_nchat::Event>>>)>),
     CoreTick,
     WEvent(whatsmeow_nchat::Event),
-    LoggedIn(Res),
     CoreEvent(iced::event::Event, iced::event::Status),
+
     SidebarResize(f32),
     ChatSelected(Jid),
+
+    /// Load more messages, reached edge of scrollable.
+    /// `.0` represents whether scrolled up (`true`) or down.
+    ChatScrolled(bool),
 }
 
 struct App {
@@ -46,6 +53,8 @@ struct App {
     theme: Theme,
     state: State,
     db: Data,
+    message_drafts: HashMap<Jid, String>,
+    typing: HashMap<Jid, Jid>,
 }
 
 impl App {
@@ -63,8 +72,10 @@ impl App {
                     alpha: 1.0,
                     system_dark_mode: true,
                 },
+                message_drafts: HashMap::new(),
                 state: State::Chats(MenuChats::new(), None),
                 db,
+                typing: HashMap::new(),
             },
             Task::perform(
                 spawn_blocking(|| {
@@ -77,45 +88,51 @@ impl App {
         )
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, message: Message) -> Res<Task<Message>> {
         match message {
             Message::Nothing => {}
-            Message::Connected(r) => match r {
-                Ok((id, recv)) => {
-                    self.id = id;
-                    let acc = AccountState::get(id);
-                    println!("Account: {acc:?}");
-                    let login_t = if let AccountState::None = acc {
-                        Task::perform(
-                            spawn_blocking(move || whatsmeow_nchat::login(id).strerr()),
-                            |_| Message::CoreTick,
-                        )
-                    } else {
-                        Task::none()
-                    };
+            Message::Connected(r) => {
+                let (id, recv) = r?;
+                self.id = id;
+                let acc = AccountState::get(id);
+                println!("Account: {acc:?}");
+                let login_t = if let AccountState::None = acc {
+                    Task::perform(
+                        spawn_blocking(move || whatsmeow_nchat::login(id).strerr()),
+                        |_| Message::CoreTick,
+                    )
+                } else {
+                    Task::perform(
+                        spawn_blocking(move || whatsmeow_nchat::fetch_contacts(id).strerr()),
+                        |n| Message::Done(n.strerr().flatten()),
+                    )
+                };
 
-                    let event_t = Task::sip(
-                        sipper(|mut sender| async move {
-                            let mut r = recv.lock().await;
-                            while let Some(evt) = r.recv().await {
-                                sender.send(evt).await;
-                            }
-                        }),
-                        Message::WEvent,
-                        |()| Message::Nothing,
-                    );
+                let event_t = Task::sip(
+                    sipper(|mut sender| async move {
+                        let mut r = recv.lock().await;
+                        while let Some(evt) = r.recv().await {
+                            sender.send(evt).await;
+                        }
+                    }),
+                    Message::WEvent,
+                    |()| Message::Nothing,
+                );
 
-                    return Task::batch([event_t, login_t]);
-                }
-                Err(err) => self.set_error(err),
-            },
-            Message::LoggedIn(r) => {
-                if let Err(err) = r {
-                    self.set_error(err);
+                let t = std::time::Instant::now();
+                self.db.update_last_messages();
+                println!("Updating last messages: {} ms", t.elapsed().as_millis());
+
+                return Ok(Task::batch([event_t, login_t]));
+            }
+            Message::Done(r) => r?,
+            Message::CoreTick => {}
+            Message::CoreEvent(_event, _status) => {
+                if let iced::Event::Window(iced::window::Event::CloseRequested) = _event {
+                    whatsmeow_nchat::cleanup(self.id).unwrap();
+                    std::process::exit(0);
                 }
             }
-            Message::CoreTick => {}
-            Message::CoreEvent(_event, _status) => {}
             Message::SidebarResize(ratio) => {
                 if let State::Chats(menu, _) = &mut self.state {
                     if let Some(split) = menu.sidebar_split {
@@ -125,15 +142,21 @@ impl App {
             }
             Message::ChatSelected(chat_id) => {
                 if let State::Chats(_, ui) = &mut self.state {
-                    *ui = Some(ChatUI { selected: chat_id });
+                    let chat_buffer = ChatBuffer::new(&self.db, chat_id.clone())?;
+                    *ui = Some(ChatUI {
+                        selected: chat_id,
+                        chat_buffer,
+                    });
                 }
             }
-            Message::WEvent(event) => match self.handle_event(event) {
-                Ok(n) => return n,
-                Err(err) => self.set_error(err),
-            },
+            Message::WEvent(event) => return self.handle_event(event),
+            Message::ChatScrolled(reverse) => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    chat.chat_buffer.load(&self.db, reverse)?;
+                }
+            }
         }
-        Task::none()
+        Ok(Task::none())
     }
 
     fn set_error(&mut self, err: String) {
@@ -166,34 +189,44 @@ fn main() {
     const WINDOW_HEIGHT: f32 = 400.0;
     const WINDOW_WIDTH: f32 = 600.0;
 
-    iced::application(App::create, App::update, App::view)
-        .title(|_: &App| "QuantumChat".to_owned())
-        .subscription(App::subscription)
-        // .scale_factor(App::scale_factor)
-        .theme(App::theme)
-        .settings(iced::Settings {
-            fonts: load_fonts(),
-            default_font: FONT_DEFAULT,
-            // antialiasing: true,
-            ..Default::default()
-        })
-        .window(iced::window::Settings {
-            // icon,
-            // exit_on_close_request: false,
-            size: iced::Size {
-                width: WINDOW_WIDTH,
-                height: WINDOW_HEIGHT,
-            },
-            min_size: Some(iced::Size {
-                width: 420.0,
-                height: 310.0,
-            }),
-            // decorations,
-            // transparent: true,
-            ..Default::default()
-        })
-        .run()
-        .unwrap();
+    iced::application(
+        App::create,
+        |n: &mut App, m| match n.update(m) {
+            Ok(n) => n,
+            Err(err) => {
+                n.set_error(err);
+                Task::none()
+            }
+        },
+        App::view,
+    )
+    .title(|_: &App| "QuantumChat".to_owned())
+    .subscription(App::subscription)
+    // .scale_factor(App::scale_factor)
+    .theme(App::theme)
+    .settings(iced::Settings {
+        fonts: load_fonts(),
+        default_font: FONT_DEFAULT,
+        // antialiasing: true,
+        ..Default::default()
+    })
+    .window(iced::window::Settings {
+        // icon,
+        exit_on_close_request: false,
+        size: iced::Size {
+            width: WINDOW_WIDTH,
+            height: WINDOW_HEIGHT,
+        },
+        min_size: Some(iced::Size {
+            width: 420.0,
+            height: 310.0,
+        }),
+        // decorations,
+        // transparent: true,
+        ..Default::default()
+    })
+    .run()
+    .unwrap();
 }
 
 fn load_fonts() -> Vec<Cow<'static, [u8]>> {

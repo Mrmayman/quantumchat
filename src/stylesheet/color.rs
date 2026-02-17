@@ -96,9 +96,9 @@ pub enum Color {
     ExtraDark,
     Dark,
     SecondDark,
-    Light,
-    SecondLight,
     Mid,
+    SecondLight,
+    Light,
     White,
 }
 
@@ -112,6 +112,17 @@ impl Color {
             Color::SecondLight => Color::SecondDark,
             Color::Light => Color::Dark,
             Color::White => Color::ExtraDark,
+        }
+    }
+
+    pub fn next(self) -> Color {
+        match self {
+            Color::ExtraDark => Color::Dark,
+            Color::Dark => Color::SecondDark,
+            Color::SecondDark => Color::Mid,
+            Color::Mid => Color::Light,
+            Color::Light => Color::SecondLight,
+            Color::SecondLight | Color::White => Color::White,
         }
     }
 }

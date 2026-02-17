@@ -1,6 +1,8 @@
 use iced::widget::pane_grid;
 use whatsmeow_nchat::Jid;
 
+use crate::view::chat_buffer::ChatBuffer;
+
 pub enum State {
     Loading,
     Login(MenuLogin),
@@ -51,4 +53,5 @@ impl MenuChats {
 
 pub struct ChatUI {
     pub selected: Jid,
+    pub chat_buffer: ChatBuffer,
 }

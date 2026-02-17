@@ -47,15 +47,21 @@ impl App {
                     self.db.config.self_jid = Some(jid.clone());
                     self.db.save_config()?;
                 }
-                self.db.add_contact(Contact {
-                    name,
-                    jid,
-                    muted: false,
-                    is_group,
-                    chatted: false,
-                    last_message_time: 0,
-                    last_read_message_time: 0,
-                })?;
+
+                let should_add = self.db.contacts.get(&jid).is_none_or(|n| n.is_incomplete);
+                if should_add {
+                    self.db.add_contact(Contact {
+                        name,
+                        jid,
+                        muted: false,
+                        is_group,
+                        chatted: false,
+                        last_message_time: 0,
+                        last_read_message_time: 0,
+                        last_msg: None,
+                        is_incomplete: false,
+                    })?;
+                }
             }
             ChatEvent::NewChatsNotify {
                 is_unread,
@@ -63,20 +69,8 @@ impl App {
                 is_pinned,
                 last_message_time,
             } => {
-                self.db.operate_on_contact(&id, |n| {
-                    n.chatted = true;
-                    n.muted = is_muted;
-                    let time = last_message_time as i64;
-                    if n.last_message_time < time {
-                        n.last_message_time = time;
-                    }
-                    if n.last_read_message_time < time && !is_unread {
-                        n.last_read_message_time = time;
-                    }
-                })?;
-                self.db.sort_contacts();
+                self.e_new_chat_notify(&id, is_unread, is_muted, is_pinned, last_message_time)?;
                 println!("CHAT {id:?}: {last_message_time}");
-                self.db.add_pin(id, is_pinned)?;
             }
             ChatEvent::NewMessagesNotify {
                 msg_id,
@@ -89,17 +83,46 @@ impl App {
                 time_sent,
                 is_read,
                 is_edited,
-            } => self.db.add_message(MsgData {
-                c: text,
-                sender: (sender_id != id).then_some(sender_id),
-                src: id,
-                replying_to: quoted_id,
-                timestamp: time_sent as i64,
-                msg_id,
-                is_edited,
-                is_read,
-                from_me,
-            })?,
+            } => {
+                let should_update_window =
+                    if let (State::Chats(_, Some(ui)), Some(last_message_time)) = (
+                        &self.state,
+                        self.db.contacts.get(&id).map(|n| n.last_message_time),
+                    ) {
+                        if ui.selected == id && ui.chat_buffer.end_ts == last_message_time {
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
+                self.db.add_message(MsgData {
+                    c: text,
+                    sender: (sender_id != id).then_some(sender_id),
+                    src: id.clone(),
+                    replying_to: quoted_id,
+                    timestamp: time_sent as u64,
+                    msg_id,
+                    is_edited,
+                    is_read,
+                    from_me,
+                })?;
+
+                if should_update_window {
+                    if let State::Chats(_, Some(ui)) = &mut self.state {
+                        ui.chat_buffer.load(&self.db, false)?;
+                    }
+                }
+            }
+            ChatEvent::NewTypingNotify { user_id, is_typing } => {
+                if is_typing {
+                    self.typing.insert(id, user_id);
+                } else {
+                    self.typing.remove(&user_id);
+                }
+            }
             _ => {
                 let message = format!("{event:?}")
                     .split(',')
@@ -111,6 +134,31 @@ impl App {
         Ok(Task::none())
     }
 
+    fn e_new_chat_notify(
+        &mut self,
+        id: &Jid,
+        is_unread: bool,
+        is_muted: bool,
+        is_pinned: bool,
+        last_message_time: isize,
+    ) -> Result<(), String> {
+        self.db.operate_on_contact(id, |n| {
+            n.chatted = true;
+            n.muted = is_muted;
+            let time = last_message_time as u64;
+            if n.last_message_time < time {
+                n.last_message_time = time;
+            }
+            if n.last_read_message_time < time && !is_unread {
+                n.last_read_message_time = time;
+            }
+        })?;
+
+        self.db.sort_contacts();
+        self.db.add_pin(id.clone(), is_pinned)?;
+        Ok(())
+    }
+
     fn e_reinit(&mut self) -> Result<Task<Message>, String> {
         let id = self.id;
         self.state = State::Loading;
@@ -120,7 +168,7 @@ impl App {
                 whatsmeow_nchat::login(id).strerr()?;
                 Ok::<(), String>(())
             }),
-            |n| Message::LoggedIn(n.strerr().flatten()),
+            |n| Message::Done(n.strerr().flatten()),
         ))
     }
 }

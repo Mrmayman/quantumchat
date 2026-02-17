@@ -20,17 +20,18 @@ pub static DIR: LazyLock<PathBuf> = LazyLock::new(|| {
 pub struct Data {
     db: sled::Db,
 
-    pub contacts: HashMap<String, Contact>,
+    pub contacts: HashMap<Jid, Contact>,
     pub contacts_tree: sled::Tree,
-    messages_tree: sled::Tree,
-    messages_list_tree: sled::Tree,
+    pub messages_tree: sled::Tree,
+    pub messages_list_tree: sled::Tree,
     pub config: Config,
     pub order: Vec<Jid>,
+    pub latest_timestamp: u64,
 }
 
 impl Data {
     pub fn new() -> Result<Self, String> {
-        const CACHE: u64 = 32 * 1024 * 1024;
+        const CACHE: u64 = 16 * 1024 * 1024;
         let db = sled::Config::new()
             .path(DIR.join("data"))
             .use_compression(true)
@@ -48,11 +49,12 @@ impl Data {
             .map(|r| {
                 let (k, v) = r.strerr()?;
                 Ok::<_, String>((
-                    String::from_utf8_lossy(&k).to_string(),
+                    Jid::parse(&String::from_utf8_lossy(&k))
+                        .ok_or_else(|| "JID error".to_owned())?,
                     serde_json::from_slice::<Contact>(&v).strerr()?,
                 ))
             })
-            .collect::<Result<HashMap<String, Contact>, String>>()?;
+            .collect::<Result<HashMap<Jid, Contact>, String>>()?;
 
         let config = if let Ok(Some(config)) = db.get("config") {
             serde_json::from_slice::<Config>(&config).strerr()?
@@ -69,7 +71,6 @@ impl Data {
         let order: Vec<Jid> = contacts
             .keys()
             .cloned()
-            .filter_map(|n| Jid::parse(&n))
             .filter(|n| !config.pins.contains(n))
             .collect();
 
@@ -81,6 +82,10 @@ impl Data {
             messages_list_tree,
             config,
             order,
+            latest_timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|n| n.as_secs())
+                .unwrap_or_default(),
         };
         data.sort_contacts();
         Ok(data)
@@ -88,12 +93,14 @@ impl Data {
 
     pub fn sort_contacts(&mut self) {
         self.order.sort_unstable_by(|a, b| {
-            let (Some(ca), Some(cb)) =
-                (self.contacts.get(&a.to_id()), self.contacts.get(&b.to_id()))
-            else {
+            let (Some(ca), Some(cb)) = (self.contacts.get(&a), self.contacts.get(&b)) else {
                 return std::cmp::Ordering::Equal;
             };
             cb.last_message_time.cmp(&ca.last_message_time)
         });
+    }
+
+    pub fn display_jid<'a>(&'a self, jid: &'a Jid) -> &'a str {
+        self.contacts.get(&jid).map_or(jid.number(), |n| &n.name)
     }
 }

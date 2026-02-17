@@ -18,11 +18,15 @@ pub struct Contact {
     pub chatted: bool,
     #[serde(rename = "isg")]
     pub is_group: bool,
+    #[serde(rename = "isi")]
+    pub is_incomplete: bool,
 
     #[serde(rename = "lrmt")]
-    pub last_read_message_time: i64,
+    pub last_read_message_time: u64,
     #[serde(rename = "lmt")]
-    pub last_message_time: i64,
+    pub last_message_time: u64,
+    #[serde(skip)]
+    pub last_msg: Option<(Jid, String, String)>,
 }
 
 impl Data {
@@ -35,7 +39,7 @@ impl Data {
         self.contacts_tree
             .insert(contact.jid.to_id(), value)
             .strerr()?;
-        self.contacts.insert(contact.jid.to_id(), contact);
+        self.contacts.insert(contact.jid.clone(), contact);
 
         Ok(())
     }
@@ -49,7 +53,7 @@ impl Data {
             let mut contact = serde_json::from_slice::<Contact>(&contact).strerr()?;
             operation(&mut contact);
             let value = serde_json::to_vec(&contact).strerr()?;
-            self.contacts.insert(jid_raw.clone(), contact);
+            self.contacts.insert(jid.clone(), contact);
             self.contacts_tree.insert(jid_raw, value).strerr()?;
         } else {
             // Contact doesn't exist, likely a group
@@ -61,6 +65,8 @@ impl Data {
                 chatted: true,
                 last_message_time: 0,
                 last_read_message_time: 0,
+                last_msg: None,
+                is_incomplete: true,
             };
             operation(&mut contact);
             let value = serde_json::to_vec(&contact).strerr()?;
@@ -68,7 +74,7 @@ impl Data {
             if !self.config.pins.contains(jid) && !self.order.contains(&contact.jid) {
                 self.order.push(jid.clone());
             }
-            self.contacts.insert(jid_raw, contact);
+            self.contacts.insert(jid.clone(), contact);
         }
 
         Ok(())
