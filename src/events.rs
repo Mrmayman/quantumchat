@@ -39,7 +39,7 @@ impl App {
                 notify,
             } => {
                 let jid = if phone.is_empty() {
-                    id
+                    id.clone()
                 } else {
                     Jid::from_phone_no(phone)
                 };

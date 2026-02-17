@@ -46,6 +46,8 @@ enum Message {
     /// Load more messages, reached edge of scrollable.
     /// `.0` represents whether scrolled up (`true`) or down.
     ChatScrolled(bool),
+    ChatMessageInput(String),
+    ChatSend,
 }
 
 struct App {
@@ -153,6 +155,38 @@ impl App {
             Message::ChatScrolled(reverse) => {
                 if let State::Chats(_, Some(chat)) = &mut self.state {
                     chat.chat_buffer.load(&self.db, reverse)?;
+                }
+            }
+            Message::ChatMessageInput(msg) => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    self.message_drafts.insert(chat.selected.clone(), msg);
+                }
+            }
+            Message::ChatSend => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    let chat_id = chat.selected.clone();
+                    let Some(contents) = self.message_drafts.remove(&chat_id) else {
+                        return Ok(Task::none());
+                    };
+                    if contents.is_empty() {
+                        return Ok(Task::none());
+                    }
+                    let id = self.id;
+
+                    return Ok(Task::perform(
+                        spawn_blocking(move || {
+                            whatsmeow_nchat::send_message(
+                                id,
+                                &chat_id,
+                                &contents,
+                                None,
+                                None::<(&std::path::Path, _)>,
+                                None,
+                            )
+                            .strerr()
+                        }),
+                        |n| Message::Done(n.strerr().flatten()),
+                    ));
                 }
             }
         }

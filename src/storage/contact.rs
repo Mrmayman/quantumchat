@@ -31,6 +31,12 @@ pub struct Contact {
 
 impl Data {
     pub fn add_contact(&mut self, contact: Contact) -> Result<(), String> {
+        if contact.jid.server().to_string() == "lid" {
+            println!("lid");
+            self.add_contact_lid(&contact)?;
+            return Ok(());
+        }
+
         if !self.config.pins.contains(&contact.jid) && !self.order.contains(&contact.jid) {
             self.order.push(contact.jid.clone());
         }
@@ -41,6 +47,15 @@ impl Data {
             .strerr()?;
         self.contacts.insert(contact.jid.clone(), contact);
 
+        Ok(())
+    }
+
+    fn add_contact_lid(&mut self, contact: &Contact) -> Result<(), String> {
+        let jid = Jid::from_phone_no(contact.name.clone());
+        self.contacts_lid_tree
+            .insert(contact.jid.to_id(), jid.to_id().as_bytes())
+            .strerr()?;
+        self.contacts_lid.insert(contact.jid.clone(), jid);
         Ok(())
     }
 
@@ -56,6 +71,10 @@ impl Data {
             self.contacts.insert(jid.clone(), contact);
             self.contacts_tree.insert(jid_raw, value).strerr()?;
         } else {
+            if jid.server().to_string() == "lid" {
+                return Ok(());
+            }
+
             // Contact doesn't exist, likely a group
             let mut contact = Contact {
                 name: jid.number().to_owned(),

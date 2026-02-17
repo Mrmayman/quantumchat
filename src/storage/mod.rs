@@ -21,9 +21,12 @@ pub struct Data {
     db: sled::Db,
 
     pub contacts: HashMap<Jid, Contact>,
-    pub contacts_tree: sled::Tree,
+    pub contacts_lid: HashMap<Jid, Jid>,
+    contacts_lid_tree: sled::Tree,
+    contacts_tree: sled::Tree,
     pub messages_tree: sled::Tree,
     pub messages_list_tree: sled::Tree,
+
     pub config: Config,
     pub order: Vec<Jid>,
     pub latest_timestamp: u64,
@@ -41,6 +44,7 @@ impl Data {
             .open()
             .strerr()?;
         let contacts_tree = db.open_tree("contacts").strerr()?;
+        let contacts_lid_tree = db.open_tree("contacts_lid").strerr()?;
         let messages_tree = db.open_tree("messages").strerr()?;
         let messages_list_tree = db.open_tree("messages_list").strerr()?;
 
@@ -55,6 +59,19 @@ impl Data {
                 ))
             })
             .collect::<Result<HashMap<Jid, Contact>, String>>()?;
+        let contacts_lid = contacts_tree
+            .iter()
+            .filter_map(|r| {
+                let (k, v) = r.ok()?;
+                Some((
+                    Jid::parse(&String::from_utf8_lossy(&k))?,
+                    Jid::parse(&String::from_utf8_lossy(&v))?,
+                ))
+            })
+            // Some people hide their numbers for privacy, those fail to parse
+            // For example, +44∙∙∙∙∙∙∙∙85@s.whatsapp.net (with those dot characters)
+            // So we do filter_map
+            .collect::<HashMap<Jid, Jid>>();
 
         let config = if let Ok(Some(config)) = db.get("config") {
             serde_json::from_slice::<Config>(&config).strerr()?
@@ -77,7 +94,9 @@ impl Data {
         let mut data = Data {
             db,
             contacts,
+            contacts_lid,
             contacts_tree,
+            contacts_lid_tree,
             messages_tree,
             messages_list_tree,
             config,
@@ -101,6 +120,13 @@ impl Data {
     }
 
     pub fn display_jid<'a>(&'a self, jid: &'a Jid) -> &'a str {
-        self.contacts.get(&jid).map_or(jid.number(), |n| &n.name)
+        self.contacts
+            .get(&jid)
+            .or_else(|| {
+                self.contacts_lid
+                    .get(&jid)
+                    .and_then(|n| self.contacts.get(n))
+            })
+            .map_or(jid.number(), |n| &n.name)
     }
 }
