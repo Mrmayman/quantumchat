@@ -51,6 +51,9 @@ impl Data {
     }
 
     fn add_contact_lid(&mut self, contact: &Contact) -> Result<Task<Message>, String> {
+        if contact.jid.contains("∙") {
+            return Ok(Task::none());
+        }
         let jid = Jid::from_phone_no(contact.name.clone());
 
         let from_jid = contact.jid.clone();
@@ -59,7 +62,7 @@ impl Data {
         let t = Task::perform(
             async move {
                 sqlx::query!(
-                    "INSERT INTO contacts_lid (from_jid, to_jid) VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO contacts_lid (from_jid, to_jid) VALUES (?, ?)",
                     from_jid,
                     to_jid,
                 )

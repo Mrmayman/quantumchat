@@ -57,7 +57,12 @@ impl App {
                 widget::rule::horizontal(1),
                 widget::scrollable(
                     widget::Column::new()
-                        .push(widget::sensor("...").on_show(|_| Message::ChatScrolled(true)))
+                        .push(
+                            widget::sensor("...")
+                                .on_show(|_| Message::ChatScrolled(true))
+                                .anticipate(100)
+                                .key(ui.chat_buffer.start_ts)
+                        )
                         .extend(ui.chat_buffer.messages.iter().map(|n| render_msg(n)))
                         .push(
                             self.db
@@ -65,7 +70,10 @@ impl App {
                                 .get(&ui.chat_buffer.viewing)
                                 .filter(|n| n.last_message_time != ui.chat_buffer.end_ts)
                                 .map(|_| {
-                                    widget::sensor("...").on_show(|_| Message::ChatScrolled(false))
+                                    widget::sensor("...")
+                                        .on_show(|_| Message::ChatScrolled(false))
+                                        .anticipate(100)
+                                        .key(ui.chat_buffer.end_ts)
                                 })
                         )
                         .spacing(2)

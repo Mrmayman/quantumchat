@@ -75,7 +75,7 @@ impl Data {
             async move {
                 let timestamp = msg.timestamp.0 as i64;
                 sqlx::query!(
-                    r"INSERT INTO messages (
+                    r"INSERT OR REPLACE INTO messages (
                 msg_id, content,
                 source, sender,
                 timestamp, replying_to,

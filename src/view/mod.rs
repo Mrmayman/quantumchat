@@ -7,7 +7,7 @@ use crate::{
     state::{MenuLogin, State},
     stylesheet::color::Color,
     view::components::{center, sbox},
-    App, Element, FONT_MONO,
+    App, Element, Message, FONT_MONO,
 };
 
 mod chat;
@@ -23,6 +23,7 @@ impl App {
             State::Error(err) => center(column![
                 widget::text("Error").size(20),
                 widget::text(err).size(14),
+                widget::button("Back").on_press(Message::OpenMainMenu)
             ])
             .into(),
         };

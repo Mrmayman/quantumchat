@@ -40,6 +40,7 @@ enum Message {
     WEvent(whatsmeow_nchat::Event),
     CoreEvent(iced::event::Event, iced::event::Status),
 
+    OpenMainMenu,
     SidebarResize(f32),
     ChatSelected(Jid),
 
@@ -95,6 +96,9 @@ impl App {
     pub fn update(&mut self, message: Message) -> Res<Task<Message>> {
         match message {
             Message::Nothing => {}
+            Message::OpenMainMenu => {
+                self.state = State::Chats(MenuChats::new(), None);
+            }
             Message::Connected(r) => {
                 let (id, recv) = r?;
                 self.id = id;

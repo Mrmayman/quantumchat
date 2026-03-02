@@ -38,6 +38,7 @@ impl Data {
             .create_if_missing(true)
             .optimize_on_close(true, None)
             .pragma("cache_size", "-16384")
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
             .synchronous(sqlx::sqlite::SqliteSynchronous::Normal);
 
         let runtime = tokio::runtime::Runtime::new().strerr()?;
