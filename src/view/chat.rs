@@ -105,7 +105,8 @@ impl App {
         column![
             row![icons::chatbox_s(20), widget::text("Chats").size(20)]
                 .padding([10, 16])
-                .spacing(10),
+                .spacing(10)
+                .width(Length::Fill),
             widget::scrollable(widget::column(
                 self.db
                     .config
@@ -130,25 +131,25 @@ impl App {
                                         .size(12)
                                         .style(tsubtitle),
                                 )
-                            } else if let Some(line) =
-                                contact.last_msg.as_ref().and_then(|n| n.1.lines().next())
-                            {
-                                Some(
-                                    widget::text(line)
-                                        .wrapping(widget::text::Wrapping::None)
-                                        .shaping(Shaping::Advanced)
-                                        .size(12)
-                                        .style(tsubtitle),
-                                )
+                            // } else if let Some(line) =
+                            //     contact.last_msg.as_ref().and_then(|n| n.1.lines().next())
+                            // {
+                            //     Some(
+                            //         widget::text(line)
+                            //             .wrapping(widget::text::Wrapping::None)
+                            //             .shaping(Shaping::Advanced)
+                            //             .size(12)
+                            //             .style(tsubtitle),
+                            //     )
                             } else {
                                 None
                             },
                             widget::space::horizontal(),
-                            if let Some((_, _, time)) = &contact.last_msg.as_ref() {
-                                Some(widget::text(time).size(12).style(tsubtitle))
-                            } else {
-                                None
-                            },
+                            // if let Some((_, _, time)) = &contact.last_msg.as_ref() {
+                            // Some(widget::text(time).size(12).style(tsubtitle))
+                            // } else {
+                            // None
+                            // },
                         ];
 
                         (
@@ -179,6 +180,7 @@ impl App {
                     })
             ))
             .height(Length::Fill)
+            .width(Length::Fill)
             .style(|t: &Theme, s| t.style_scrollable_flat_extra_dark(s))
         ]
         .into()

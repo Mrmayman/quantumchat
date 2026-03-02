@@ -1,5 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, sync::LazyLock};
 
+use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use whatsmeow_nchat::Jid;
 
 use crate::{
@@ -18,72 +19,58 @@ pub static DIR: LazyLock<PathBuf> = LazyLock::new(|| {
 });
 
 pub struct Data {
-    db: sled::Db,
+    pub db: sqlx::SqlitePool,
+    pub runtime: tokio::runtime::Runtime,
 
     pub contacts: HashMap<Jid, Contact>,
     pub contacts_lid: HashMap<Jid, Jid>,
-    contacts_lid_tree: sled::Tree,
-    contacts_tree: sled::Tree,
-    pub messages_tree: sled::Tree,
-    pub messages_list_tree: sled::Tree,
 
     pub config: Config,
+    pub config_autosave_free: bool,
     pub order: Vec<Jid>,
-    pub latest_timestamp: u64,
+    pub latest_timestamp: Time,
 }
 
 impl Data {
     pub fn new() -> Result<Self, String> {
-        const CACHE: u64 = 16 * 1024 * 1024;
-        let db = sled::Config::new()
-            .path(DIR.join("data"))
-            .use_compression(true)
-            .cache_capacity(CACHE)
-            .compression_factor(2)
-            .mode(sled::Mode::HighThroughput)
-            .open()
-            .strerr()?;
-        let contacts_tree = db.open_tree("contacts").strerr()?;
-        let contacts_lid_tree = db.open_tree("contacts_lid").strerr()?;
-        let messages_tree = db.open_tree("messages").strerr()?;
-        let messages_list_tree = db.open_tree("messages_list").strerr()?;
+        let opts = SqliteConnectOptions::new()
+            .filename(DIR.join("main.db"))
+            .create_if_missing(true)
+            .optimize_on_close(true, None)
+            .pragma("cache_size", "-16384")
+            .synchronous(sqlx::sqlite::SqliteSynchronous::Normal);
 
-        let contacts = contacts_tree
-            .iter()
+        let runtime = tokio::runtime::Runtime::new().strerr()?;
+
+        let db = runtime.block_on(SqlitePool::connect_with(opts)).strerr()?;
+        // .use_compression(true)
+        // .compression_factor(2)
+        // .mode(sled::Mode::HighThroughput)
+
+        runtime
+            .block_on(sqlx::migrate!("./migrations").run(&db))
+            .strerr()?;
+
+        let contacts = runtime
+            .block_on(sqlx::query_as!(Contact, "select * from contacts").fetch_all(&db))
+            .strerr()?
+            .into_iter()
             .map(|r| {
-                let (k, v) = r.strerr()?;
-                Ok::<_, String>((
-                    Jid::parse(&String::from_utf8_lossy(&k))
-                        .ok_or_else(|| "JID error".to_owned())?,
-                    serde_json::from_slice::<Contact>(&v).strerr()?,
-                ))
+                Ok::<_, String>((Jid::parse(&r.jid).ok_or_else(|| "JID error".to_owned())?, r))
             })
             .collect::<Result<HashMap<Jid, Contact>, String>>()?;
-        let contacts_lid = contacts_lid_tree
-            .iter()
-            .filter_map(|r| {
-                let (k, v) = r.ok()?;
-                Some((
-                    Jid::parse(&String::from_utf8_lossy(&k))?,
-                    Jid::parse(&String::from_utf8_lossy(&v))?,
-                ))
-            })
+
+        let contacts_lid = runtime
+            .block_on(sqlx::query!("select * from contacts_lid").fetch_all(&db))
+            .strerr()?
+            .into_iter()
+            .filter_map(|r| Some((Jid::parse(&r.from_jid)?, Jid::parse(&r.to_jid)?)))
             // Some people hide their numbers for privacy, those fail to parse
             // For example, +44∙∙∙∙∙∙∙∙85@s.whatsapp.net (with those dot characters)
             // So we do filter_map
             .collect::<HashMap<Jid, Jid>>();
 
-        let config = if let Ok(Some(config)) = db.get("config") {
-            serde_json::from_slice::<Config>(&config).strerr()?
-        } else {
-            let config = Config {
-                pins: Vec::new(),
-                self_jid: None,
-            };
-            db.insert("config", serde_json::to_vec(&config).strerr()?)
-                .strerr()?;
-            config
-        };
+        let config = Config::load()?;
 
         let order: Vec<Jid> = contacts
             .keys()
@@ -95,16 +82,16 @@ impl Data {
             db,
             contacts,
             contacts_lid,
-            contacts_tree,
-            contacts_lid_tree,
-            messages_tree,
-            messages_list_tree,
             config,
             order,
-            latest_timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|n| n.as_secs())
-                .unwrap_or_default(),
+            runtime,
+            latest_timestamp: Time(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|n| n.as_secs())
+                    .unwrap_or_default(),
+            ),
+            config_autosave_free: false,
         };
         data.sort_contacts();
         Ok(data)
@@ -125,5 +112,14 @@ impl Data {
             .and_then(|n| self.contacts.get(n))
             .or_else(|| self.contacts.get(&jid))
             .map_or(jid.number(), |n| &n.name)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Time(pub u64);
+
+impl From<i64> for Time {
+    fn from(value: i64) -> Self {
+        Self(value as u64)
     }
 }

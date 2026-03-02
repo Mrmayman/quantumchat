@@ -10,7 +10,7 @@ use whatsmeow_nchat::{AccountState, ConnId, Jid};
 
 use crate::{
     state::{ChatUI, MenuChats, MenuLogin, State},
-    storage::{Data, DIR},
+    storage::{message::MsgData, Data, DIR},
     stylesheet::styles::{Theme, ThemeColor, ThemeMode},
     view::chat_buffer::ChatBuffer,
 };
@@ -48,6 +48,8 @@ enum Message {
     ChatScrolled(bool),
     ChatMessageInput(String),
     ChatSend,
+
+    ChatBufferLoaded(Res<Vec<MsgData>>, bool),
 }
 
 struct App {
@@ -144,17 +146,18 @@ impl App {
             }
             Message::ChatSelected(chat_id) => {
                 if let State::Chats(_, ui) = &mut self.state {
-                    let chat_buffer = ChatBuffer::new(&self.db, chat_id.clone())?;
+                    let (chat_buffer, task) = ChatBuffer::new(&self.db, chat_id.clone())?;
                     *ui = Some(ChatUI {
                         selected: chat_id,
                         chat_buffer,
                     });
+                    return Ok(task);
                 }
             }
             Message::WEvent(event) => return self.handle_event(event),
             Message::ChatScrolled(reverse) => {
                 if let State::Chats(_, Some(chat)) = &mut self.state {
-                    chat.chat_buffer.load(&self.db, reverse)?;
+                    return chat.chat_buffer.load_begin(&self.db, reverse);
                 }
             }
             Message::ChatMessageInput(msg) => {
@@ -187,6 +190,11 @@ impl App {
                         }),
                         |n| Message::Done(n.strerr().flatten()),
                     ));
+                }
+            }
+            Message::ChatBufferLoaded(r, reverse) => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    chat.chat_buffer.loaded(&self.db, r?, reverse)?;
                 }
             }
         }
@@ -289,4 +297,12 @@ impl<T, E: ToString> IntoStringError<T> for Result<T, E> {
     fn strerr(self) -> Result<T, String> {
         self.map_err(|err| err.to_string())
     }
+}
+
+#[macro_export]
+macro_rules! jid {
+    ($s:expr) => {
+        Jid::parse(&$s)
+            .ok_or_else(|| format!("JID parse error ({}:{}:{})", file!(), line!(), column!()))?
+    };
 }

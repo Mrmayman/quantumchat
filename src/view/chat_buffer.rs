@@ -1,10 +1,13 @@
 use std::collections::VecDeque;
 
+use iced::Task;
 use whatsmeow_nchat::Jid;
 
 use crate::{
     core::IntoStringError,
-    storage::{message::MsgData, Data},
+    jid,
+    storage::{message::MsgData, Data, Time},
+    Message,
 };
 
 const MSG_LOAD_LIMIT: usize = 200;
@@ -12,14 +15,14 @@ const MSG_LIMIT: usize = 600;
 
 pub struct ChatBuffer {
     pub messages: VecDeque<RenderedMessage>,
-    pub start_ts: u64,
-    pub end_ts: u64,
+    pub start_ts: Time,
+    pub end_ts: Time,
     pub viewing: Jid,
     pub viewing_id: String,
 }
 
 impl ChatBuffer {
-    pub fn new(db: &Data, chat: Jid) -> Result<Self, String> {
+    pub fn new(db: &Data, chat: Jid) -> Result<(Self, Task<Message>), String> {
         let chat_id = chat.to_id();
 
         let timestamp = db
@@ -36,109 +39,95 @@ impl ChatBuffer {
             viewing: chat,
             viewing_id: chat_id,
         };
-        t.load(db, true)?;
-        t.load(db, false)?;
-        Ok(t)
+        let task = Task::batch([t.load_begin(db, true)?, t.load_begin(db, false)?]);
+        Ok((t, task))
     }
 
-    pub fn load(&mut self, db: &Data, reverse: bool) -> Result<(), String> {
-        const DAY_SECS: u64 = 24 * 60 * 60;
-        let r1 = Data::message_schema(
-            &self.viewing_id,
-            if reverse {
-                if self.start_ts > DAY_SECS {
-                    self.start_ts - DAY_SECS
-                } else {
-                    self.start_ts
-                }
-            } else {
-                self.end_ts
-            },
-        );
-        let r2 = Data::message_schema(
-            &self.viewing_id,
-            if reverse {
-                self.start_ts
-            } else {
-                self.end_ts + DAY_SECS
-            },
-        );
-        let loaded = || db.messages_list_tree.range(r1.as_slice()..r2.as_slice());
-        println!("loaded {} {reverse}", loaded().count());
-        let loaded = loaded();
+    pub fn load_begin(&mut self, db: &Data, reverse: bool) -> Result<Task<Message>, String> {
+        let timestamp = if reverse { self.start_ts } else { self.end_ts };
+        let viewing = self.viewing_id.clone();
+        let db = db.db.clone();
 
-        if reverse {
-            let mut start_ts = 0;
-            for m in loaded.rev().take(MSG_LOAD_LIMIT) {
-                let Some(msg_data) = db.messages_tree.get(&m.strerr()?.1).strerr()? else {
-                    continue;
+        Ok(Task::perform(
+            async move {
+                let time = timestamp.0 as i64;
+                let q = if reverse {
+                    sqlx::query_as!(
+                    MsgData,
+                    "SELECT * FROM messages WHERE source = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?",
+                    viewing,
+                    time,
+                    MSG_LOAD_LIMIT as i64
+                ).fetch_all(&db).await
+                } else {
+                    sqlx::query_as!(
+                    MsgData,
+                    "SELECT * FROM messages WHERE source = ? AND timestamp > ? ORDER BY timestamp ASC LIMIT ?",
+                    viewing,
+                    time,
+                    MSG_LOAD_LIMIT as i64
+                ).fetch_all(&db).await
                 };
-                let message: MsgData = serde_json::from_slice(&msg_data).strerr()?;
-                start_ts = message.timestamp;
-                let rendered = msgdata_to_rendered(db, message)?;
+                q.strerr()
+            },
+            move |r| Message::ChatBufferLoaded(r, reverse),
+        ))
+
+        // let mut start_ts = 0;
+        // for m in loaded.rev().take(MSG_LOAD_LIMIT) {
+        //     let Some(msg_data) = db.messages_tree.get(&m.strerr()?.1).strerr()? else {
+        //         continue;
+        //     };
+        //     let message: MsgData = serde_json::from_slice(&msg_data).strerr()?;
+        //     start_ts = message.timestamp;
+        //     let rendered = msgdata_to_rendered(db, message)?;
+        //     self.messages.push_front(rendered);
+        // }
+        // self.messages.truncate(MSG_LIMIT);
+        // self.start_ts = start_ts;
+    }
+
+    pub fn loaded(
+        &mut self,
+        db: &Data,
+        messages: Vec<MsgData>,
+        reverse: bool,
+    ) -> Result<(), String> {
+        let mut start_ts = Time(0);
+        for message in messages {
+            start_ts = message.timestamp;
+            let rendered = RenderedMessage {
+                message: RMessageCore {
+                    text: message.content,
+                    // TODO: collapse name for multiple messages in a row
+                    sender_name: db.display_jid(&jid!(message.sender)).to_owned(),
+                    sender: jid!(message.sender),
+                },
+                replying_to: None,           // TODO
+                time_display: "".to_owned(), // TODO
+                is_edited: message.is_edited,
+                from_me: message.from_me,
+            };
+            if reverse {
                 self.messages.push_front(rendered);
-            }
-            self.messages.truncate(MSG_LIMIT);
-            self.start_ts = start_ts;
-        } else {
-            let mut end_ts = 0;
-            for m in loaded.take(MSG_LOAD_LIMIT) {
-                let Some(msg_data) = db.messages_tree.get(&m.strerr()?.1).strerr()? else {
-                    continue;
-                };
-                let message: MsgData = serde_json::from_slice(&msg_data).strerr()?;
-                end_ts = message.timestamp;
-                let rendered = msgdata_to_rendered(db, message)?;
-                if self
-                    .messages
-                    .iter()
-                    .next_back()
-                    .is_some_and(|n| n.message.text == rendered.message.text)
-                {
-                    continue;
-                }
+            } else {
                 self.messages.push_back(rendered);
             }
-            let len = self.messages.len();
-            if len > MSG_LIMIT {
-                self.messages.drain(0..(len - MSG_LIMIT));
-            }
-            self.end_ts = end_ts;
         }
-
+        while self.messages.len() > MSG_LIMIT {
+            if reverse {
+                self.messages.pop_back();
+            } else {
+                self.messages.pop_front();
+            }
+        }
+        if reverse {
+            self.start_ts = start_ts;
+        } else {
+            self.end_ts = start_ts;
+        }
         Ok(())
     }
-}
-
-fn msgdata_to_rendered(db: &Data, message: MsgData) -> Result<RenderedMessage, String> {
-    let sender = message.get_sender();
-    let replying_to = if let Some(replying_id) = &message.replying_to {
-        if let Some(msg_data) = db.messages_tree.get(&replying_id.0).strerr()? {
-            let message: MsgData = serde_json::from_slice(&msg_data).strerr()?;
-            let sender = message.get_sender();
-            Some(RMessageCore {
-                sender_name: db.display_jid(sender).to_owned(),
-                sender: sender.clone(),
-                text: message.c,
-            })
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-    let message = RenderedMessage {
-        message: RMessageCore {
-            text: message.c.clone(),
-            sender_name: db.display_jid(sender).to_owned(),
-            sender: sender.clone(),
-        },
-        replying_to,
-        time_display: "".to_owned(), // TODO
-        is_edited: message.is_edited,
-        from_me: message.from_me,
-    };
-    Ok(message)
 }
 
 pub struct RenderedMessage {

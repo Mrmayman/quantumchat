@@ -3,7 +3,7 @@ use whatsmeow_nchat::{ChatEvent, Event, Jid};
 
 use crate::{
     state::{MenuChats, State},
-    storage::{contact::Contact, message::MsgData},
+    storage::{contact::Contact, message::MsgData, Time},
     App, IntoStringError, Message,
 };
 
@@ -45,22 +45,22 @@ impl App {
                 };
                 if is_self {
                     self.db.config.self_jid = Some(jid.clone());
-                    self.db.save_config()?;
+                    self.db.config_autosave_free = true;
                 }
 
                 let should_add = self.db.contacts.get(&jid).is_none_or(|n| n.is_incomplete);
                 if should_add {
-                    self.db.add_contact(Contact {
+                    return Ok(self.db.add_contact(Contact {
                         name,
-                        jid,
+                        jid: jid.to_id(),
                         muted: false,
                         is_group,
                         chatted: false,
-                        last_message_time: 0,
-                        last_read_message_time: 0,
-                        last_msg: None,
+                        last_message_time: Time(0),
+                        last_read_message_time: Time(0),
                         is_incomplete: false,
-                    })?;
+                        last_msg_id: None,
+                    })?);
                 }
             }
             ChatEvent::NewChatsNotify {
@@ -69,8 +69,14 @@ impl App {
                 is_pinned,
                 last_message_time,
             } => {
-                self.e_new_chat_notify(&id, is_unread, is_muted, is_pinned, last_message_time)?;
                 println!("CHAT {id:?}: {last_message_time}");
+                return Ok(self.e_new_chat_notify(
+                    &id,
+                    is_unread,
+                    is_muted,
+                    is_pinned,
+                    last_message_time,
+                )?);
             }
             ChatEvent::NewMessagesNotify {
                 msg_id,
@@ -98,13 +104,13 @@ impl App {
                         false
                     };
 
-                self.db.add_message(MsgData {
-                    c: text,
-                    sender: (sender_id != id).then_some(sender_id),
-                    src: id.clone(),
-                    replying_to: quoted_id,
-                    timestamp: time_sent as u64,
-                    msg_id,
+                let t1 = self.db.add_message(MsgData {
+                    content: text,
+                    sender: sender_id.to_id(),
+                    source: id.to_id(),
+                    replying_to: quoted_id.map(|n| n.0),
+                    timestamp: Time(time_sent as u64),
+                    msg_id: msg_id.0,
                     is_edited,
                     is_read,
                     from_me,
@@ -112,9 +118,11 @@ impl App {
 
                 if should_update_window {
                     if let State::Chats(_, Some(ui)) = &mut self.state {
-                        ui.chat_buffer.load(&self.db, false)?;
+                        let t2 = ui.chat_buffer.load_begin(&self.db, false)?;
+                        return Ok(Task::batch([t1, t2]));
                     }
                 }
+                return Ok(t1);
             }
             ChatEvent::NewTypingNotify { user_id, is_typing } => {
                 if is_typing {
@@ -141,22 +149,50 @@ impl App {
         is_muted: bool,
         is_pinned: bool,
         last_message_time: isize,
-    ) -> Result<(), String> {
-        self.db.operate_on_contact(id, |n| {
+    ) -> Result<Task<Message>, String> {
+        let task = self.db.operate_on_contact(id, |n, db| {
             n.chatted = true;
             n.muted = is_muted;
-            let time = last_message_time as u64;
+            let time = Time(last_message_time as u64);
             if n.last_message_time < time {
                 n.last_message_time = time;
+
+                let db = db.clone();
+                let jid_s = id.to_id();
+
+                _ = tokio::spawn(async move {
+                    let time = time.0 as i64;
+                    let _: Result<_, _> = sqlx::query!(
+                        "UPDATE contacts SET last_message_time = ? WHERE jid = ?",
+                        time,
+                        jid_s
+                    )
+                    .execute(&db)
+                    .await;
+                });
             }
             if n.last_read_message_time < time && !is_unread {
                 n.last_read_message_time = time;
+
+                let db = db.clone();
+                let jid_s = id.to_id();
+
+                _ = tokio::spawn(async move {
+                    let time = time.0 as i64;
+                    let _: Result<_, _> = sqlx::query!(
+                        "UPDATE contacts SET last_read_message_time = ? WHERE jid = ?",
+                        time,
+                        jid_s
+                    )
+                    .execute(&db)
+                    .await;
+                });
             }
         })?;
 
         self.db.sort_contacts();
-        self.db.add_pin(id.clone(), is_pinned)?;
-        Ok(())
+        self.db.add_pin(id.clone(), is_pinned);
+        Ok(task)
     }
 
     fn e_reinit(&mut self) -> Result<Task<Message>, String> {

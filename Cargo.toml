@@ -30,7 +30,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["sync"] }
 
-sled = { version = "0.34", features = ["compression"] }
+sqlx = { version = "0.8.*", default-features = false, features = [
+    "macros", "migrate", "derive",
+    "runtime-tokio", "sqlite", "chrono", "json"
+]}
 dirs = "6"
 sipper = "0.1"
 
