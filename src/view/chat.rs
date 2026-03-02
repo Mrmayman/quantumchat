@@ -22,7 +22,11 @@ impl App {
     pub fn view_chats<'a>(&'a self, menu: &'a MenuChats, ui: Option<&'a ChatUI>) -> Element<'a> {
         widget::pane_grid(&menu.sidebar_grid_state, |_, is_sidebar, _| {
             if *is_sidebar {
-                sbox(self.view_chats_sidebar(ui), Color::ExtraDark).into()
+                row![
+                    sbox(self.view_chats_sidebar(ui), Color::ExtraDark),
+                    widget::rule::vertical(1),
+                ]
+                .into()
             } else {
                 if let Some(ui) = ui {
                     self.view_chats_page(ui).into()
@@ -40,14 +44,15 @@ impl App {
     }
 
     fn view_chats_page<'a>(&'a self, ui: &'a ChatUI) -> widget::Container<'a, Message, Theme> {
-        sbox(
-            widget::column![
+        {
+            widget::container(widget::column![
                 sbox(
                     widget::text(self.db.display_jid(&ui.selected))
                         .size(20)
                         .shaping(Shaping::Advanced),
                     Color::Dark
                 )
+                .width(Length::Fill)
                 .padding(16),
                 widget::rule::horizontal(1),
                 widget::scrollable(
@@ -83,14 +88,15 @@ impl App {
                         .on_input(Message::ChatMessageInput)
                         .on_submit(Message::ChatSend),
                         button_with_icon(icons::checkmark_s(13), "Send", 13)
+                            .on_press(Message::ChatSend)
                     ]
                     .spacing(5),
                     Color::Dark
                 )
                 .padding(5),
-            ],
-            Color::Dark,
-        )
+            ])
+            .style(move |t: &Theme| t.style_container_sharp_box(0.0, Color::ExtraDark))
+        }
         .width(Length::Fill)
         .height(Length::Fill)
     }
@@ -98,7 +104,7 @@ impl App {
     fn view_chats_sidebar<'a>(&'a self, ui: Option<&'a ChatUI>) -> Element<'a> {
         column![
             row![icons::chatbox_s(20), widget::text("Chats").size(20)]
-                .padding(10)
+                .padding([10, 16])
                 .spacing(10),
             widget::scrollable(widget::column(
                 self.db
@@ -210,9 +216,9 @@ fn render_msg(msg: &RenderedMessage) -> Element<'_> {
     let reply = msg.replying_to.as_ref().map(|reply| {
         mbox(
             if msg.from_me {
-                Color::ExtraDark
-            } else {
                 Color::Dark
+            } else {
+                Color::SecondDark
             },
             column![
                 widget::text(&reply.sender_name)
@@ -232,9 +238,9 @@ fn render_msg(msg: &RenderedMessage) -> Element<'_> {
         },
         mbox(
             if msg.from_me {
-                Color::Dark
+                Color::SecondDark
             } else {
-                Color::ExtraDark
+                Color::Dark
             },
             column![
                 reply,
@@ -254,7 +260,7 @@ fn render_msg(msg: &RenderedMessage) -> Element<'_> {
                 ]
             ]
             .spacing(5),
-            msg.from_me,
+            !msg.from_me,
         ),
     ]
     .into()

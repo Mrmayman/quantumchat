@@ -59,7 +59,7 @@ impl Data {
                 ))
             })
             .collect::<Result<HashMap<Jid, Contact>, String>>()?;
-        let contacts_lid = contacts_tree
+        let contacts_lid = contacts_lid_tree
             .iter()
             .filter_map(|r| {
                 let (k, v) = r.ok()?;
@@ -120,13 +120,10 @@ impl Data {
     }
 
     pub fn display_jid<'a>(&'a self, jid: &'a Jid) -> &'a str {
-        self.contacts
+        self.contacts_lid
             .get(&jid)
-            .or_else(|| {
-                self.contacts_lid
-                    .get(&jid)
-                    .and_then(|n| self.contacts.get(n))
-            })
+            .and_then(|n| self.contacts.get(n))
+            .or_else(|| self.contacts.get(&jid))
             .map_or(jid.number(), |n| &n.name)
     }
 }
