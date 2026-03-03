@@ -36,7 +36,7 @@ impl App {
                 phone,
                 is_self,
                 is_group,
-                notify,
+                notify: _,
             } => {
                 let jid = if phone.is_empty() {
                     id.clone()
@@ -84,8 +84,8 @@ impl App {
                 text,
                 from_me,
                 quoted_id,
-                file_id_path,
-                file_status,
+                file_id_path: _,
+                file_status: _,
                 time_sent,
                 is_read,
                 is_edited,

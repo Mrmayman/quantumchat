@@ -4,8 +4,8 @@ use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use whatsmeow_nchat::Jid;
 
 use crate::{
-    core::IntoStringError,
     storage::{config::Config, contact::Contact},
+    IntoStringError,
 };
 
 pub mod config;

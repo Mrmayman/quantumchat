@@ -3,10 +3,9 @@ use sqlx::prelude::FromRow;
 use whatsmeow_nchat::{Jid, MsgId};
 
 use crate::{
-    core::IntoStringError,
     jid,
     storage::{Data, Time},
-    Message,
+    IntoStringError, Message,
 };
 
 #[derive(Debug, Clone, FromRow)]

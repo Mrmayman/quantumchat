@@ -9,6 +9,7 @@ use iced::Task;
 use whatsmeow_nchat::{AccountState, ConnId, Jid};
 
 use crate::{
+    core::{App, IntoStringError, Message},
     state::{ChatUI, MenuChats, MenuLogin, State},
     storage::{message::MsgData, Data, DIR},
     stylesheet::styles::{Theme, ThemeColor, ThemeMode},
@@ -29,38 +30,6 @@ pub const FONT_DEFAULT: iced::Font = iced::Font::with_name("Inter");
 
 type Element<'a> = iced::Element<'a, Message, Theme>;
 type Res<T = ()> = Result<T, String>;
-
-#[derive(Debug, Clone)]
-enum Message {
-    Nothing,
-    Done(Res),
-
-    Connected(Res<(ConnId, Arc<Mutex<Receiver<whatsmeow_nchat::Event>>>)>),
-    CoreTick,
-    WEvent(whatsmeow_nchat::Event),
-    CoreEvent(iced::event::Event, iced::event::Status),
-
-    OpenMainMenu,
-    SidebarResize(f32),
-    ChatSelected(Jid),
-
-    /// Load more messages, reached edge of scrollable.
-    /// `.0` represents whether scrolled up (`true`) or down.
-    ChatScrolled(bool),
-    ChatMessageInput(String),
-    ChatSend,
-
-    ChatBufferLoaded(Res<Vec<MsgData>>, bool),
-}
-
-struct App {
-    id: ConnId,
-    theme: Theme,
-    state: State,
-    db: Data,
-    message_drafts: HashMap<Jid, String>,
-    typing: HashMap<Jid, Jid>,
-}
 
 impl App {
     pub fn create() -> (Self, Task<Message>) {
@@ -127,9 +96,7 @@ impl App {
                     |()| Message::Nothing,
                 );
 
-                let t = std::time::Instant::now();
                 self.db.update_last_messages();
-                println!("Updating last messages: {} ms", t.elapsed().as_millis());
 
                 return Ok(Task::batch([event_t, login_t]));
             }
@@ -155,13 +122,23 @@ impl App {
                         selected: chat_id,
                         chat_buffer,
                     });
-                    return Ok(task);
+                    return Ok(Task::batch([
+                        task,
+                        iced::widget::operation::snap_to_end("messages"),
+                    ]));
                 }
             }
             Message::WEvent(event) => return self.handle_event(event),
-            Message::ChatScrolled(reverse) => {
+            Message::ChatScrollLazyLoad(reverse) => {
                 if let State::Chats(_, Some(chat)) = &mut self.state {
-                    return chat.chat_buffer.load_begin(&self.db, reverse);
+                    if !chat.chat_buffer.debounce(reverse) {
+                        return chat.chat_buffer.load_begin(&self.db, reverse);
+                    }
+                }
+            }
+            Message::ChatScrolledView(v) => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    chat.chat_buffer.scroll = v;
                 }
             }
             Message::ChatMessageInput(msg) => {
@@ -198,7 +175,53 @@ impl App {
             }
             Message::ChatBufferLoaded(r, reverse) => {
                 if let State::Chats(_, Some(chat)) = &mut self.state {
-                    chat.chat_buffer.loaded(&self.db, r?, reverse)?;
+                    let messages = r?;
+                    let len = messages.len();
+                    chat.chat_buffer.loaded(&self.db, messages, reverse)?;
+                    let viewport = chat.chat_buffer.scroll;
+
+                    return Ok(if reverse {
+                        let reverse_offset = viewport.absolute_offset_reversed();
+                        iced::widget::operation::snap_to_end("messages").chain(
+                            iced::widget::operation::scroll_by(
+                                "messages",
+                                iced::widget::operation::AbsoluteOffset {
+                                    x: -reverse_offset.x,
+                                    y: -reverse_offset.y,
+                                },
+                            ),
+                        )
+                    } else {
+                        iced::widget::operation::scroll_to("messages", viewport.absolute_offset())
+                    }
+                    .chain(Task::perform(
+                        async move {
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            Message::ChatBufferShrink(len, reverse)
+                        },
+                        |n| n,
+                    )));
+                }
+            }
+            Message::ChatBufferShrink(len, reverse) => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    chat.chat_buffer.shrink(len, reverse);
+                    let viewport = chat.chat_buffer.scroll;
+
+                    return Ok(if reverse {
+                        iced::widget::operation::scroll_to("messages", viewport.absolute_offset())
+                    } else {
+                        let reverse_offset = viewport.absolute_offset_reversed();
+                        iced::widget::operation::snap_to_end("messages").chain(
+                            iced::widget::operation::scroll_by(
+                                "messages",
+                                iced::widget::operation::AbsoluteOffset {
+                                    x: -reverse_offset.x,
+                                    y: -reverse_offset.y,
+                                },
+                            ),
+                        )
+                    });
                 }
             }
         }
@@ -290,23 +313,4 @@ fn load_fonts() -> Vec<Cow<'static, [u8]>> {
             .as_slice()
             .into(),
     ]
-}
-
-pub trait IntoStringError<T> {
-    #[allow(clippy::missing_errors_doc)]
-    fn strerr(self) -> Result<T, String>;
-}
-
-impl<T, E: ToString> IntoStringError<T> for Result<T, E> {
-    fn strerr(self) -> Result<T, String> {
-        self.map_err(|err| err.to_string())
-    }
-}
-
-#[macro_export]
-macro_rules! jid {
-    ($s:expr) => {
-        Jid::parse(&$s)
-            .ok_or_else(|| format!("JID parse error ({}:{}:{})", file!(), line!(), column!()))?
-    };
 }

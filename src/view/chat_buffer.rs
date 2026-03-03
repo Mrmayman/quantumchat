@@ -1,13 +1,12 @@
 use std::collections::VecDeque;
 
-use iced::Task;
+use iced::{widget::scrollable::Viewport, Task};
 use whatsmeow_nchat::Jid;
 
 use crate::{
-    core::IntoStringError,
     jid,
     storage::{message::MsgData, Data, Time},
-    Message,
+    IntoStringError, Message,
 };
 
 const MSG_LOAD_LIMIT: usize = 200;
@@ -19,6 +18,11 @@ pub struct ChatBuffer {
     pub end_ts: Time,
     pub viewing: Jid,
     pub viewing_id: String,
+
+    pub scroll: Viewport,
+
+    debounce_up: bool,
+    debounce_down: bool,
 }
 
 impl ChatBuffer {
@@ -38,9 +42,27 @@ impl ChatBuffer {
             end_ts: timestamp,
             viewing: chat,
             viewing_id: chat_id,
+            debounce_up: true,
+            debounce_down: true,
+            scroll: unsafe { std::mem::zeroed() }, // hear me out, I had no choice
         };
-        let task = Task::batch([t.load_begin(db, true)?, t.load_begin(db, false)?]);
+        let task = t.load_begin(db, false)?.chain(t.load_begin(db, true)?);
         Ok((t, task))
+    }
+
+    pub fn debounce(&mut self, reverse: bool) -> bool {
+        if reverse {
+            if self.debounce_up {
+                return true;
+            }
+            self.debounce_up = true;
+        } else {
+            if self.debounce_down {
+                return true;
+            }
+            self.debounce_down = true;
+        }
+        false
     }
 
     pub fn load_begin(&mut self, db: &Data, reverse: bool) -> Result<Task<Message>, String> {
@@ -93,18 +115,17 @@ impl ChatBuffer {
         messages: Vec<MsgData>,
         reverse: bool,
     ) -> Result<(), String> {
-        let mut start_ts = Time(0);
-
-        while self.messages.len() + messages.len() > MSG_LIMIT {
-            if reverse {
-                self.messages.pop_back();
-            } else {
-                self.messages.pop_front();
-            }
+        if reverse {
+            self.debounce_up = false;
+        } else {
+            self.debounce_down = false;
         }
 
+        let mut ts = Time(0);
+
         for message in messages {
-            start_ts = message.timestamp;
+            ts = message.timestamp;
+
             let rendered = RenderedMessage {
                 message: RMessageCore {
                     text: message.content,
@@ -114,6 +135,7 @@ impl ChatBuffer {
                 },
                 replying_to: None,           // TODO
                 time_display: "".to_owned(), // TODO
+                timestamp: message.timestamp,
                 is_edited: message.is_edited,
                 from_me: message.from_me,
             };
@@ -123,12 +145,39 @@ impl ChatBuffer {
                 self.messages.push_back(rendered);
             }
         }
+
         if reverse {
-            self.start_ts = start_ts;
-        } else {
-            self.end_ts = start_ts;
+            if self.start_ts.0 > ts.0 {
+                self.start_ts = ts;
+            }
+        } else if self.end_ts.0 < ts.0 {
+            self.end_ts = ts;
         }
         Ok(())
+    }
+
+    pub fn shrink(&mut self, messages: usize, reverse: bool) {
+        while self.messages.len() + messages > MSG_LIMIT {
+            if reverse {
+                self.messages.pop_back();
+            } else {
+                self.messages.pop_front();
+            }
+        }
+        if reverse {
+            // We loaded from front (up), so removing from end
+            if let Some(last) = self.messages.back() {
+                if self.end_ts > last.timestamp {
+                    self.end_ts = last.timestamp;
+                }
+            }
+        } else {
+            if let Some(first) = self.messages.front() {
+                if self.start_ts < first.timestamp {
+                    self.start_ts = first.timestamp;
+                }
+            }
+        }
     }
 }
 
@@ -136,6 +185,7 @@ pub struct RenderedMessage {
     pub message: RMessageCore,
     pub replying_to: Option<RMessageCore>,
     pub time_display: String,
+    pub timestamp: Time,
     pub is_edited: bool,
     pub from_me: bool,
 }

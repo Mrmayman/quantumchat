@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use whatsmeow_nchat::Jid;
 
 use crate::{
-    core::IntoStringError,
     storage::{Data, DIR},
+    IntoStringError,
 };
 
 #[derive(Clone, Serialize, Deserialize)]

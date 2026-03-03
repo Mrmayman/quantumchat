@@ -58,10 +58,11 @@ impl App {
                 widget::scrollable(
                     widget::Column::new()
                         .push(
-                            widget::sensor("...")
-                                .on_show(|_| Message::ChatScrolled(true))
-                                .anticipate(100)
-                                .key(ui.chat_buffer.start_ts)
+                            (!ui.chat_buffer.messages.is_empty()).then_some(
+                                widget::sensor("...")
+                                    .on_show(|_| Message::ChatScrollLazyLoad(true))
+                                    .key(ui.chat_buffer.start_ts)
+                            )
                         )
                         .extend(ui.chat_buffer.messages.iter().map(|n| render_msg(n)))
                         .push(
@@ -71,17 +72,18 @@ impl App {
                                 .filter(|n| n.last_message_time != ui.chat_buffer.end_ts)
                                 .map(|_| {
                                     widget::sensor("...")
-                                        .on_show(|_| Message::ChatScrolled(false))
-                                        .anticipate(100)
+                                        .on_show(|_| Message::ChatScrollLazyLoad(false))
                                         .key(ui.chat_buffer.end_ts)
                                 })
                         )
                         .spacing(2)
                         .padding(10)
                 )
+                .id("messages")
                 .style(|t: &Theme, s| t.style_scrollable_flat_dark(s))
                 .width(Length::Fill)
-                .height(Length::Fill),
+                .height(Length::Fill)
+                .on_scroll(|v| Message::ChatScrolledView(v)),
                 widget::rule::horizontal(1),
                 sbox(
                     widget::row![
