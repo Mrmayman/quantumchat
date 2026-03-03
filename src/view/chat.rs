@@ -17,6 +17,7 @@ use iced::{
     widget::{self, column, row, text::Shaping},
     Alignment, Length,
 };
+use whatsmeow_nchat::Jid;
 
 impl App {
     pub fn view_chats<'a>(&'a self, menu: &'a MenuChats, ui: Option<&'a ChatUI>) -> Element<'a> {
@@ -134,33 +135,41 @@ impl App {
                             );
                         };
 
-                        let indicators = row![
-                            if let Some(typing) = self.typing.get(n) {
-                                Some(
-                                    widget::text!("{} is typing...", self.db.display_jid(typing))
-                                        .size(12)
-                                        .style(tsubtitle),
-                                )
-                            // } else if let Some(line) =
-                            //     contact.last_msg.as_ref().and_then(|n| n.1.lines().next())
-                            // {
-                            //     Some(
-                            //         widget::text(line)
-                            //             .wrapping(widget::text::Wrapping::None)
-                            //             .shaping(Shaping::Advanced)
-                            //             .size(12)
-                            //             .style(tsubtitle),
-                            //     )
-                            } else {
-                                None
-                            },
-                            widget::space::horizontal(),
-                            // if let Some((_, _, time)) = &contact.last_msg.as_ref() {
-                            // Some(widget::text(time).size(12).style(tsubtitle))
-                            // } else {
-                            // None
-                            // },
-                        ];
+                        let indicators: Option<Element> = if let Some(typing) = self.typing.get(n) {
+                            Some(
+                                widget::text!("{} is typing...", self.db.display_jid(typing))
+                                    .size(12)
+                                    .style(tsubtitle)
+                                    .into(),
+                            )
+                        } else if let (Some(sender), Some(line)) = (
+                            contact
+                                .last_msg_sender
+                                .as_ref()
+                                .and_then(|n| Jid::parse(n))
+                                .map(|n| self.db.display_jid(&n).to_owned()),
+                            contact
+                                .last_msg_contents
+                                .as_ref()
+                                .and_then(|n| n.lines().next()),
+                        ) {
+                            fn t(t: widget::Text<Theme>) -> widget::Text<Theme> {
+                                t.wrapping(widget::text::Wrapping::None)
+                                    .shaping(Shaping::Advanced)
+                                    .size(12)
+                            }
+
+                            Some(
+                                row![
+                                    t(widget::text!("{sender}: "))
+                                        .style(|t: &Theme| t.style_text(Color::Mid)),
+                                    t(widget::text(line)).style(tsubtitle)
+                                ]
+                                .into(),
+                            )
+                        } else {
+                            None
+                        };
 
                         (
                             n,

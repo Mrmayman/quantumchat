@@ -15,7 +15,8 @@ create table if not exists contacts
     last_read_message_time INTEGER NOT NULL DEFAULT (strftime('%s','now')),
     last_message_time      INTEGER NOT NULL DEFAULT (strftime('%s','now')),
 
-    last_msg_id TEXT
+    last_msg_contents TEXT,
+    last_msg_sender TEXT
     -- FOREIGN KEY (last_msg_id) REFERENCES messages(msg_id)
 );
 

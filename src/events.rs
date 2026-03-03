@@ -59,7 +59,8 @@ impl App {
                         last_message_time: Time(0),
                         last_read_message_time: Time(0),
                         is_incomplete: false,
-                        last_msg_id: None,
+                        last_msg_contents: None,
+                        last_msg_sender: None,
                     })?);
                 }
             }

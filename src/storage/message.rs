@@ -1,6 +1,5 @@
 use iced::Task;
 use sqlx::prelude::FromRow;
-use whatsmeow_nchat::{Jid, MsgId};
 
 use crate::{
     jid,
@@ -28,46 +27,9 @@ pub struct MsgData {
 
 impl Data {
     pub fn add_message(&mut self, msg: MsgData) -> Result<Task<Message>, String> {
+        self.contacts_sort_free = true;
         let time = msg.timestamp;
-        let t_contact = self.operate_on_contact(&jid!(msg.source), |n, db| {
-            if n.last_message_time < time {
-                n.last_message_time = time;
-
-                let db = db.clone();
-                let jid_s = msg.source.clone();
-
-                _ = tokio::spawn(async move {
-                    let time = time.0 as i64;
-                    let _: Result<_, _> = sqlx::query!(
-                        "UPDATE contacts SET last_message_time = ? WHERE jid = ?",
-                        time,
-                        jid_s
-                    )
-                    .execute(&db)
-                    .await;
-                });
-
-                // n.last_msg = Some((msg.sender.clone(), msg.c.clone(), "4:20".to_owned()));
-                // TODO time display
-            }
-            if msg.is_read && n.last_read_message_time < time {
-                n.last_read_message_time = time;
-
-                let db = db.clone();
-                let jid_s = msg.source.clone();
-
-                _ = tokio::spawn(async move {
-                    let time = time.0 as i64;
-                    let _: Result<_, _> = sqlx::query!(
-                        "UPDATE contacts SET last_read_message_time = ? WHERE jid = ?",
-                        time,
-                        jid_s
-                    )
-                    .execute(&db)
-                    .await;
-                });
-            }
-        })?;
+        let t_contact = self.update_last_message(&msg, time)?;
 
         let db = self.db.clone();
         let t_msg = Task::perform(
@@ -98,38 +60,62 @@ impl Data {
         Ok(Task::batch([t_contact, t_msg]))
     }
 
-    pub fn get_last_message(&self, id: &Jid) -> Option<MsgId> {
-        // let chat_id = id.to_id();
-        // let mut key = chat_id.len().to_be_bytes().to_vec();
-        // key.extend(chat_id.as_bytes());
+    fn update_last_message(&mut self, msg: &MsgData, time: Time) -> Result<Task<Message>, String> {
+        let t_contact = self.operate_on_contact(&jid!(msg.source), |n, db| {
+            if n.last_message_time < time {
+                n.last_message_time = time;
 
-        // let scan = || self.messages_list_tree.scan_prefix(&key);
+                let db = db.clone();
+                let jid_s = msg.source.clone();
 
-        // scan()
-        //     .values()
-        //     .next_back()
-        //     .map(|n| n.ok())
-        //     .flatten()
-        //     .map(|n| MsgId(String::from_utf8_lossy(&n).to_string()))
-        None
-    }
+                let message_contents = msg.content.clone();
+                n.last_msg_contents = Some(msg.content.clone());
+                let message_sender = msg.sender.clone();
+                n.last_msg_sender = Some(msg.sender.clone());
 
-    pub fn update_last_messages(&mut self) {
-        // let mut to_update = HashMap::new();
-        for jid in self.contacts.keys() {
-            let Some(last_msg) = self.get_last_message(jid) else {
-                continue;
-            };
-            // let Some(msg) = self.get_message(&last_msg) else {
-            //     continue;
-            // };
-            // to_update.insert(jid.clone(), msg);
-        }
-        // for (id, msg) in to_update {
-        //     let Some(contact) = self.contacts.get_mut(&id) else {
-        //         continue;
-        //     };
-        // contact.last_msg = Some((msg.get_sender().clone(), msg.c, "4:20".to_owned()));
-        // }
+                _ = tokio::spawn(async move {
+                    let time = time.0 as i64;
+                    let _: Result<_, _> = sqlx::query!(
+                        "UPDATE contacts SET last_message_time = ? WHERE jid = ?",
+                        time,
+                        jid_s
+                    )
+                    .execute(&db)
+                    .await;
+                    let _: Result<_, _> = sqlx::query!(
+                        "UPDATE contacts SET last_msg_contents = ? WHERE jid = ?",
+                        message_contents,
+                        jid_s
+                    )
+                    .execute(&db)
+                    .await;
+                    let _: Result<_, _> = sqlx::query!(
+                        "UPDATE contacts SET last_msg_sender = ? WHERE jid = ?",
+                        message_sender,
+                        jid_s
+                    )
+                    .execute(&db)
+                    .await;
+                });
+            }
+            if msg.is_read && n.last_read_message_time < time {
+                n.last_read_message_time = time;
+
+                let db = db.clone();
+                let jid_s = msg.source.clone();
+
+                _ = tokio::spawn(async move {
+                    let time = time.0 as i64;
+                    let _: Result<_, _> = sqlx::query!(
+                        "UPDATE contacts SET last_read_message_time = ? WHERE jid = ?",
+                        time,
+                        jid_s
+                    )
+                    .execute(&db)
+                    .await;
+                });
+            }
+        })?;
+        Ok(t_contact)
     }
 }

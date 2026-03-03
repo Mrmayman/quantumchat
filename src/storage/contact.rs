@@ -22,7 +22,8 @@ pub struct Contact {
     pub is_group: bool,
     pub is_incomplete: bool,
 
-    pub last_msg_id: Option<String>,
+    pub last_msg_contents: Option<String>,
+    pub last_msg_sender: Option<String>,
 
     // Timestamps: UNIX seconds
     #[sqlx(try_from = "i64")]
@@ -101,7 +102,8 @@ impl Data {
             last_message_time: Time(0),
             last_read_message_time: Time(0),
             is_incomplete: true,
-            last_msg_id: None,
+            last_msg_contents: None,
+            last_msg_sender: None,
         };
         operation(&mut contact, &self.db);
 

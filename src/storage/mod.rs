@@ -24,6 +24,7 @@ pub struct Data {
 
     pub contacts: HashMap<Jid, Contact>,
     pub contacts_lid: HashMap<Jid, Jid>,
+    pub contacts_sort_free: bool,
 
     pub config: Config,
     pub config_autosave_free: bool,
@@ -80,7 +81,7 @@ impl Data {
             .filter(|n| !config.pins.contains(n))
             .collect();
 
-        let mut data = Data {
+        Ok(Data {
             db,
             contacts,
             contacts_lid,
@@ -94,9 +95,8 @@ impl Data {
                     .unwrap_or_default(),
             ),
             config_autosave_free: false,
-        };
-        data.sort_contacts();
-        Ok(data)
+            contacts_sort_free: true,
+        })
     }
 
     pub fn sort_contacts(&mut self) {
