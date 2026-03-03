@@ -31,9 +31,9 @@ impl Config {
         }
     }
 
-    pub fn is_self(&self, jid: &Jid) -> bool {
-        self.self_jid.as_ref().is_some_and(|n| n == jid)
-    }
+    // pub fn is_self(&self, jid: &Jid) -> bool {
+    //     self.self_jid.as_ref().is_some_and(|n| n == jid)
+    // }
 }
 
 impl Data {

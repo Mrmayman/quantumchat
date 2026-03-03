@@ -1,17 +1,14 @@
 use sipper::sipper;
 use std::{borrow::Cow, collections::HashMap, sync::Arc};
-use tokio::{
-    sync::{mpsc::UnboundedReceiver as Receiver, Mutex},
-    task::spawn_blocking,
-};
+use tokio::{sync::Mutex, task::spawn_blocking};
 
 use iced::Task;
-use whatsmeow_nchat::{AccountState, ConnId, Jid};
+use whatsmeow_nchat::{AccountState, ConnId};
 
 use crate::{
     core::{App, IntoStringError, Message},
     state::{ChatUI, MenuChats, MenuLogin, State},
-    storage::{message::MsgData, Data, DIR},
+    storage::{Data, DIR},
     stylesheet::styles::{Theme, ThemeColor, ThemeMode},
     view::chat_buffer::ChatBuffer,
 };
@@ -50,6 +47,7 @@ impl App {
                 state: State::Chats(MenuChats::new(), None),
                 db,
                 typing: HashMap::new(),
+                tick_timer: 0,
             },
             Task::perform(
                 spawn_blocking(|| {
@@ -96,12 +94,10 @@ impl App {
                     |()| Message::Nothing,
                 );
 
-                self.db.update_last_messages();
-
                 return Ok(Task::batch([event_t, login_t]));
             }
             Message::Done(r) => r?,
-            Message::CoreTick => {}
+            Message::CoreTick => self.tick(),
             Message::CoreEvent(_event, _status) => {
                 if let iced::Event::Window(iced::window::Event::CloseRequested) = _event {
                     whatsmeow_nchat::cleanup(self.id).unwrap();
@@ -226,6 +222,24 @@ impl App {
             }
         }
         Ok(Task::none())
+    }
+
+    fn tick(&mut self) {
+        if self.tick_timer.is_multiple_of(5) && self.db.contacts_sort_free {
+            self.db.sort_contacts();
+            self.db.contacts_sort_free = false;
+        }
+        if self.db.config_autosave_free {
+            let contents =
+                serde_json::to_string_pretty(&self.db.config).expect("should normally never fail");
+            tokio::spawn(async move {
+                let p = DIR.join("config.json");
+                _ = tokio::fs::write(&p, contents).await;
+            });
+            self.db.config_autosave_free = false;
+        }
+
+        self.tick_timer = self.tick_timer.wrapping_add(1);
     }
 
     fn set_error(&mut self, err: String) {

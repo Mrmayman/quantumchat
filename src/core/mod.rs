@@ -44,6 +44,8 @@ pub struct App {
     pub db: Data,
     pub message_drafts: HashMap<Jid, String>,
     pub typing: HashMap<Jid, Jid>,
+
+    pub tick_timer: u128,
 }
 
 pub trait IntoStringError<T> {
@@ -60,7 +62,13 @@ impl<T, E: ToString> IntoStringError<T> for Result<T, E> {
 #[macro_export]
 macro_rules! jid {
     ($s:expr) => {
-        Jid::parse(&$s)
-            .ok_or_else(|| format!("JID parse error ({}:{}:{})", file!(), line!(), column!()))?
+        ::whatsmeow_nchat::Jid::parse(&$s).ok_or_else(|| {
+            format!(
+                "JID parse error ({}:{}:{})",
+                file!(),
+                line!(),
+                ::core::column!()
+            )
+        })?
     };
 }
