@@ -94,6 +94,15 @@ impl ChatBuffer {
         reverse: bool,
     ) -> Result<(), String> {
         let mut start_ts = Time(0);
+
+        while self.messages.len() + messages.len() > MSG_LIMIT {
+            if reverse {
+                self.messages.pop_back();
+            } else {
+                self.messages.pop_front();
+            }
+        }
+
         for message in messages {
             start_ts = message.timestamp;
             let rendered = RenderedMessage {
@@ -112,13 +121,6 @@ impl ChatBuffer {
                 self.messages.push_front(rendered);
             } else {
                 self.messages.push_back(rendered);
-            }
-        }
-        while self.messages.len() > MSG_LIMIT {
-            if reverse {
-                self.messages.pop_back();
-            } else {
-                self.messages.pop_front();
             }
         }
         if reverse {

@@ -37,7 +37,8 @@ impl Data {
             .filename(DIR.join("main.db"))
             .create_if_missing(true)
             .optimize_on_close(true, None)
-            .pragma("cache_size", "-16384")
+            // .pragma("cache_size", "-16384")
+            .statement_cache_capacity(4)
             .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
             .synchronous(sqlx::sqlite::SqliteSynchronous::Normal);
 
