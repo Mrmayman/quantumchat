@@ -77,8 +77,8 @@ impl Data {
 
         let order: Vec<Jid> = contacts
             .keys()
-            .cloned()
             .filter(|n| !config.pins.contains(n))
+            .cloned()
             .collect();
 
         Ok(Data {
@@ -101,7 +101,7 @@ impl Data {
 
     pub fn sort_contacts(&mut self) {
         self.order.sort_unstable_by(|a, b| {
-            let (Some(ca), Some(cb)) = (self.contacts.get(&a), self.contacts.get(&b)) else {
+            let (Some(ca), Some(cb)) = (self.contacts.get(a), self.contacts.get(b)) else {
                 return std::cmp::Ordering::Equal;
             };
             cb.last_message_time.cmp(&ca.last_message_time)
@@ -110,7 +110,7 @@ impl Data {
 
     pub fn display_jid<'a>(&'a self, jid: &'a Jid) -> &'a str {
         self.contacts_lid
-            .get(&jid)
+            .get(jid)
             .and_then(|n| self.contacts.get(n))
             .or_else(|| self.contacts.get(&jid))
             .map_or(jid.number(), |n| &n.name)

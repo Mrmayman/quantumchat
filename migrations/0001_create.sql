@@ -1,6 +1,6 @@
 -- All timestamps are unix time (in milliseconds? idk)
 
-create table if not exists contacts
+CREATE TABLE IF NOT EXISTS contacts
 (
     jid TEXT PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
@@ -20,14 +20,14 @@ create table if not exists contacts
     -- FOREIGN KEY (last_msg_id) REFERENCES messages(msg_id)
 );
 
-create table if not exists contacts_lid
+CREATE TABLE IF NOT EXISTS contacts_lid
 (
     from_jid TEXT PRIMARY KEY NOT NULL,
     to_jid TEXT NOT NULL
     -- FOREIGN KEY (to_jid) REFERENCES contacts(jid)
 );
 
-create table if not exists messages
+CREATE TABLE IF NOT EXISTS messages
 (
     msg_id TEXT PRIMARY KEY NOT NULL,
     content TEXT NOT NULL,

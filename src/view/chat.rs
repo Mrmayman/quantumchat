@@ -28,16 +28,14 @@ impl App {
                     widget::rule::vertical(1),
                 ]
                 .into()
+            } else if let Some(ui) = ui {
+                self.view_chats_page(ui).into()
             } else {
-                if let Some(ui) = ui {
-                    self.view_chats_page(ui).into()
-                } else {
-                    sbox("Select a chat", Color::Dark)
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .padding(10)
-                        .into()
-                }
+                sbox("Select a chat", Color::Dark)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .padding(10)
+                    .into()
             }
         })
         .on_resize(10, |t| Message::SidebarResize(t.ratio))
@@ -45,69 +43,68 @@ impl App {
     }
 
     fn view_chats_page<'a>(&'a self, ui: &'a ChatUI) -> widget::Container<'a, Message, Theme> {
-        {
-            widget::container(widget::column![
-                sbox(
-                    widget::text(self.db.display_jid(&ui.selected))
-                        .size(20)
-                        .shaping(Shaping::Advanced),
-                    Color::Dark
-                )
-                .width(Length::Fill)
-                .padding(16),
-                widget::rule::horizontal(1),
-                widget::scrollable(
-                    widget::Column::new()
-                        .push(
-                            (!ui.chat_buffer.messages.is_empty()).then_some(
-                                widget::sensor("...")
-                                    .on_show(|_| Message::ChatScrollLazyLoad(true))
-                                    .key(ui.chat_buffer.start_ts)
-                            )
-                        )
-                        .extend(ui.chat_buffer.messages.iter().map(|n| render_msg(n)))
-                        .push(
-                            self.db
-                                .contacts
-                                .get(&ui.chat_buffer.viewing)
-                                .filter(|n| n.last_message_time != ui.chat_buffer.end_ts)
-                                .map(|_| {
-                                    widget::sensor("...")
-                                        .on_show(|_| Message::ChatScrollLazyLoad(false))
-                                        .key(ui.chat_buffer.end_ts)
-                                })
-                        )
-                        .spacing(2)
-                        .padding(10)
-                )
-                .id("messages")
-                .style(|t: &Theme, s| t.style_scrollable_flat_dark(s))
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .on_scroll(|v| Message::ChatScrolledView(v)),
-                widget::rule::horizontal(1),
-                sbox(
-                    widget::row![
-                        button_with_icon(icons::new_s(13), "", 13),
-                        widget::text_input(
-                            "Enter message...",
-                            self.message_drafts
-                                .get(&ui.selected)
-                                .map(|n| n.as_str())
-                                .unwrap_or_default()
-                        )
-                        .on_input(Message::ChatMessageInput)
-                        .on_submit(Message::ChatSend),
-                        button_with_icon(icons::checkmark_s(13), "Send", 13)
-                            .on_press(Message::ChatSend)
-                    ]
-                    .spacing(5),
-                    Color::Dark
-                )
-                .padding(5),
-            ])
-            .style(move |t: &Theme| t.style_container_sharp_box(0.0, Color::ExtraDark))
-        }
+        let sensor_up = (!ui.chat_buffer.messages.is_empty()).then_some(
+            widget::sensor("...")
+                .on_show(|_| Message::ChatScrollLazyLoad(true))
+                .key(ui.chat_buffer.start_ts),
+        );
+
+        let sensor_down = self
+            .db
+            .contacts
+            .get(&ui.chat_buffer.viewing)
+            .filter(|n| n.last_message_time != ui.chat_buffer.end_ts)
+            .map(|_| {
+                widget::sensor("...")
+                    .on_show(|_| Message::ChatScrollLazyLoad(false))
+                    .key(ui.chat_buffer.end_ts)
+            });
+
+        widget::container(widget::column![
+            sbox(
+                widget::text(self.db.display_jid(&ui.selected))
+                    .size(20)
+                    .shaping(Shaping::Advanced),
+                Color::Dark
+            )
+            .width(Length::Fill)
+            .padding(16),
+            widget::rule::horizontal(1),
+            widget::scrollable(
+                widget::Column::new()
+                    .push(sensor_up)
+                    .extend(ui.chat_buffer.messages.iter().map(|n| render_msg(n)))
+                    .push(sensor_down)
+                    .spacing(2)
+                    .padding(10)
+            )
+            .id("messages")
+            .style(|t: &Theme, s| t.style_scrollable_flat_dark(s))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .on_scroll(Message::ChatScrolledView),
+            widget::rule::horizontal(1),
+            sbox(
+                widget::row![
+                    button_with_icon(icons::new_s(13), "", 13),
+                    widget::text_input(
+                        "Enter message...",
+                        self.message_drafts
+                            .get(&ui.selected)
+                            .map(|n| n.as_str())
+                            .unwrap_or_default()
+                    )
+                    .on_input(Message::ChatMessageInput)
+                    .on_submit(Message::ChatSend),
+                    button_with_icon(icons::checkmark_s(13), "Send", 13)
+                        .on_press(Message::ChatSend)
+                ]
+                .spacing(5),
+                Color::Dark
+            )
+            .padding(5),
+        ])
+        .style(move |t: &Theme| t.style_container_sharp_box(0.0, Color::ExtraDark))
         .width(Length::Fill)
         .height(Length::Fill)
     }
@@ -125,7 +122,7 @@ impl App {
                     .iter()
                     .chain(self.db.order.iter())
                     .map(|n| {
-                        let Some(contact) = self.db.contacts.get(&n) else {
+                        let Some(contact) = self.db.contacts.get(n) else {
                             return (
                                 n,
                                 row![
@@ -252,12 +249,8 @@ fn render_msg(msg: &RenderedMessage) -> Element<'_> {
     });
 
     row![
-        if msg.from_me {
-            Some(widget::space::horizontal())
-        } else {
-            None
-        },
-        mbox(
+        msg.from_me.then_some(widget::space::horizontal()),
+        column![mbox(
             if msg.from_me {
                 Color::SecondDark
             } else {

@@ -39,7 +39,7 @@ impl App {
 impl MenuLogin {
     pub fn view(&self) -> Element<'_> {
         let code: Element = if let Some(qr) = &self.qr_code {
-            widget::qr_code(&qr).cell_size(2).into()
+            widget::qr_code(qr).cell_size(2).into()
         } else {
             widget::container(column![
                 widget::text(&self.code).font(FONT_MONO).size(20),

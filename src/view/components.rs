@@ -6,9 +6,7 @@ use crate::{
 };
 
 pub fn center<'a>(child: impl Into<Element<'a>>) -> widget::Container<'a, Message, Theme> {
-    widget::center(child)
-        .style(|_| widget::container::Style::default())
-        .into()
+    widget::center(child).style(|_| widget::container::Style::default())
 }
 
 /*pub fn sidebar_button<'a, A: PartialEq>(

@@ -171,11 +171,9 @@ impl ChatBuffer {
                     self.end_ts = last.timestamp;
                 }
             }
-        } else {
-            if let Some(first) = self.messages.front() {
-                if self.start_ts < first.timestamp {
-                    self.start_ts = first.timestamp;
-                }
+        } else if let Some(first) = self.messages.front() {
+            if self.start_ts < first.timestamp {
+                self.start_ts = first.timestamp;
             }
         }
     }
@@ -186,6 +184,7 @@ pub struct RenderedMessage {
     pub replying_to: Option<RMessageCore>,
     pub time_display: String,
     pub timestamp: Time,
+
     pub is_edited: bool,
     pub from_me: bool,
 }

@@ -50,7 +50,7 @@ impl App {
 
                 let should_add = self.db.contacts.get(&jid).is_none_or(|n| n.is_incomplete);
                 if should_add {
-                    return Ok(self.db.add_contact(Contact {
+                    return self.db.add_contact(Contact {
                         name,
                         jid: jid.to_id(),
                         muted: false,
@@ -61,7 +61,7 @@ impl App {
                         is_incomplete: false,
                         last_msg_contents: None,
                         last_msg_sender: None,
-                    })?);
+                    });
                 }
             }
             ChatEvent::NewChatsNotify {
@@ -71,13 +71,13 @@ impl App {
                 last_message_time,
             } => {
                 println!("CHAT {id:?}: {last_message_time}");
-                return Ok(self.e_new_chat_notify(
+                return self.e_new_chat_notify(
                     &id,
                     is_unread,
                     is_muted,
                     is_pinned,
                     last_message_time,
-                )?);
+                );
             }
             ChatEvent::NewMessagesNotify {
                 msg_id,
@@ -91,19 +91,7 @@ impl App {
                 is_read,
                 is_edited,
             } => {
-                let should_update_window =
-                    if let (State::Chats(_, Some(ui)), Some(last_message_time)) = (
-                        &self.state,
-                        self.db.contacts.get(&id).map(|n| n.last_message_time),
-                    ) {
-                        if ui.selected == id && ui.chat_buffer.end_ts == last_message_time {
-                            true
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    };
+                let should_update_window = self.should_update_chatbuf(&id);
 
                 let t1 = self.db.add_message(MsgData {
                     content: text,
@@ -141,6 +129,18 @@ impl App {
             }
         }
         Ok(Task::none())
+    }
+
+    fn should_update_chatbuf(&mut self, id: &Jid) -> bool {
+        if let (State::Chats(_, Some(ui)), Some(last_message_time)) = (
+            &self.state,
+            self.db.contacts.get(id).map(|n| n.last_message_time),
+        ) {
+            // If chat is selected, and we've scrolled to bottom (viewing latest messages)
+            ui.selected == *id && ui.chat_buffer.end_ts == last_message_time
+        } else {
+            false
+        }
     }
 
     fn e_new_chat_notify(
