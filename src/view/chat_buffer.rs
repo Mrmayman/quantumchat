@@ -1,11 +1,14 @@
 use std::collections::VecDeque;
 
 use iced::{widget::scrollable::Viewport, Task};
-use whatsmeow_nchat::Jid;
+use whatsmeow_nchat::{Jid, MsgId};
 
 use crate::{
     jid,
-    storage::{message::MsgData, Data, Time},
+    storage::{
+        message::{MsgData, ReactionData},
+        Data, Time,
+    },
     IntoStringError, Message,
 };
 
@@ -71,27 +74,7 @@ impl ChatBuffer {
         let db = db.db.clone();
 
         Ok(Task::perform(
-            async move {
-                let time = timestamp.0 as i64;
-                let q = if reverse {
-                    sqlx::query_as!(
-                    MsgData,
-                    "SELECT * FROM messages WHERE source = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?",
-                    viewing,
-                    time,
-                    MSG_LOAD_LIMIT as i64
-                ).fetch_all(&db).await
-                } else {
-                    sqlx::query_as!(
-                    MsgData,
-                    "SELECT * FROM messages WHERE source = ? AND timestamp > ? ORDER BY timestamp ASC LIMIT ?",
-                    viewing,
-                    time,
-                    MSG_LOAD_LIMIT as i64
-                ).fetch_all(&db).await
-                };
-                q.strerr()
-            },
+            async move { load_chats_from_db(reverse, timestamp, viewing, db).await },
             move |r| Message::ChatBufferLoaded(r, reverse),
         ))
 
@@ -113,6 +96,7 @@ impl ChatBuffer {
         &mut self,
         db: &Data,
         messages: Vec<MsgData>,
+        mut reactions: Vec<ReactionData>,
         reverse: bool,
     ) -> Result<(), String> {
         if reverse {
@@ -138,6 +122,19 @@ impl ChatBuffer {
                 timestamp: message.timestamp,
                 is_edited: message.is_edited,
                 from_me: message.from_me,
+                reactions: reactions
+                    .extract_if(.., |n| n.message_id == message.msg_id)
+                    .filter_map(|reaction| {
+                        Jid::parse(&reaction.sender_id).map(|jid| (reaction, jid))
+                    })
+                    .map(|(rn, sender)| RenderedReaction {
+                        sender_name: db.display_jid(&sender).to_owned(),
+                        sender,
+                        emoji: rn.emoji,
+                        from_me: rn.from_me,
+                    })
+                    .collect(),
+                id: MsgId(message.msg_id),
             };
             if reverse {
                 self.messages.push_front(rendered);
@@ -177,15 +174,90 @@ impl ChatBuffer {
             }
         }
     }
+
+    pub fn add_reaction(
+        &mut self,
+        db: &Data,
+        msg_id: &whatsmeow_nchat::MsgId,
+        emoji: String,
+        sender: Jid,
+        from_me: bool,
+    ) {
+        let Some(msg) = self.messages.iter_mut().find(|m| &m.id == msg_id) else {
+            return;
+        };
+        msg.reactions.push(RenderedReaction {
+            sender_name: db.display_jid(&sender).to_owned(),
+            sender,
+            emoji,
+            from_me,
+        });
+    }
+}
+
+async fn load_chats_from_db(
+    reverse: bool,
+    timestamp: Time,
+    viewing: String,
+    db: sqlx::Pool<sqlx::Sqlite>,
+) -> Result<(Vec<MsgData>, Vec<ReactionData>), String> {
+    let time = timestamp.0 as i64;
+    let messages = if reverse {
+        sqlx::query_as!(
+        MsgData,
+        "SELECT * FROM messages WHERE source = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?",
+        viewing,
+        time,
+        MSG_LOAD_LIMIT as i64
+    )
+        .fetch_all(&db)
+        .await
+    } else {
+        sqlx::query_as!(
+        MsgData,
+        "SELECT * FROM messages WHERE source = ? AND timestamp > ? ORDER BY timestamp ASC LIMIT ?",
+        viewing,
+        time,
+        MSG_LOAD_LIMIT as i64
+    )
+        .fetch_all(&db)
+        .await
+    }
+    .strerr()?;
+
+    let mut query = String::from("SELECT * FROM reactions WHERE message_id IN (");
+    for i in 0..messages.len() {
+        if i != 0 {
+            query.push_str(", ");
+        }
+        query.push('?');
+    }
+    query.push(')');
+    let mut q = sqlx::query_as::<_, ReactionData>(&query);
+    for id in &messages {
+        q = q.bind(&id.msg_id);
+    }
+    let reactions = q.fetch_all(&db).await.strerr()?;
+    Ok::<_, String>((messages, reactions))
 }
 
 pub struct RenderedMessage {
+    pub id: MsgId,
     pub message: RMessageCore,
     pub replying_to: Option<RMessageCore>,
+    pub reactions: Vec<RenderedReaction>,
+
     pub time_display: String,
     pub timestamp: Time,
 
     pub is_edited: bool,
+    pub from_me: bool,
+}
+
+pub struct RenderedReaction {
+    pub sender_name: String,
+    pub sender: Jid,
+    pub emoji: String,
     pub from_me: bool,
 }
 

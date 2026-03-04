@@ -44,3 +44,11 @@ CREATE TABLE IF NOT EXISTS messages
     replying_to TEXT                -- references msg_id if reply
     -- FOREIGN KEY (replying_to) REFERENCES messages(msg_id)
 );
+
+CREATE TABLE IF NOT EXISTS reactions (
+    message_id TEXT PRIMARY KEY NOT NULL,
+    chat_id    TEXT NOT NULL,
+    sender_id  TEXT NOT NULL,
+    emoji      TEXT NOT NULL,
+    from_me BOOLEAN NOT NULL DEFAULT 0
+);

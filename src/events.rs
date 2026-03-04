@@ -113,6 +113,27 @@ impl App {
                 }
                 return Ok(t1);
             }
+            ChatEvent::NewMessageReactionNotify {
+                msg_id,
+                sender_id,
+                emoji,
+                from_me,
+            } => {
+                self.db.add_reaction(
+                    id.to_id(),
+                    msg_id.0.clone(),
+                    sender_id.to_id(),
+                    emoji.clone(),
+                    from_me,
+                )?;
+
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    if chat.selected == id {
+                        chat.chat_buffer
+                            .add_reaction(&self.db, &msg_id, emoji, sender_id, from_me);
+                    }
+                }
+            }
             ChatEvent::NewTypingNotify { user_id, is_typing } => {
                 if is_typing {
                     self.typing.insert(id, user_id);

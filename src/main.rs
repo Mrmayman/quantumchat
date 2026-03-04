@@ -171,9 +171,10 @@ impl App {
             }
             Message::ChatBufferLoaded(r, reverse) => {
                 if let State::Chats(_, Some(chat)) = &mut self.state {
-                    let messages = r?;
+                    let (messages, reactions) = r?;
                     let len = messages.len();
-                    chat.chat_buffer.loaded(&self.db, messages, reverse)?;
+                    chat.chat_buffer
+                        .loaded(&self.db, messages, reactions, reverse)?;
                     let viewport = chat.chat_buffer.scroll;
 
                     return Ok(if reverse {

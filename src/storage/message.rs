@@ -25,6 +25,15 @@ pub struct MsgData {
     pub replying_to: Option<String>, // TEXT, nullable, references msg_id
 }
 
+#[derive(Debug, Clone, FromRow)]
+pub struct ReactionData {
+    pub message_id: String,
+    pub chat_id: String,
+    pub sender_id: String,
+    pub emoji: String,
+    pub from_me: bool,
+}
+
 impl Data {
     pub fn add_message(&mut self, msg: MsgData) -> Result<Task<Message>, String> {
         self.contacts_sort_free = true;
@@ -58,6 +67,32 @@ impl Data {
             |r| Message::Done(r.strerr().map(|_| ())),
         );
         Ok(Task::batch([t_contact, t_msg]))
+    }
+
+    pub fn add_reaction(
+        &mut self,
+        chat_id: String,
+        msg_id: String,
+        sender_id: String,
+        emoji: String,
+        from_me: bool,
+    ) -> Result<(), String> {
+        let db = self.db.clone();
+        tokio::spawn(async move {
+            let _: Result<_, _> = sqlx::query!(
+                r"INSERT INTO reactions (
+                    chat_id, message_id, sender_id, emoji, from_me
+                ) VALUES (?, ?, ?, ?, ?)",
+                chat_id,
+                msg_id,
+                sender_id,
+                emoji,
+                from_me,
+            )
+            .execute(&db)
+            .await;
+        });
+        Ok(())
     }
 
     fn update_last_message(&mut self, msg: &MsgData, time: Time) -> Result<Task<Message>, String> {

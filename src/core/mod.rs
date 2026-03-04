@@ -5,7 +5,10 @@ use whatsmeow_nchat::{ConnId, Jid};
 
 use crate::{
     state::State,
-    storage::{message::MsgData, Data},
+    storage::{
+        message::{MsgData, ReactionData},
+        Data,
+    },
     stylesheet::styles::Theme,
     Res,
 };
@@ -33,7 +36,7 @@ pub enum Message {
     ChatMessageInput(String),
     ChatSend,
 
-    ChatBufferLoaded(Res<Vec<MsgData>>, bool),
+    ChatBufferLoaded(Res<(Vec<MsgData>, Vec<ReactionData>)>, bool),
     ChatBufferShrink(usize, bool),
 }
 

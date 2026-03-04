@@ -275,7 +275,24 @@ fn render_msg(msg: &RenderedMessage) -> Element<'_> {
             ]
             .spacing(5),
             !msg.from_me,
-        ),
+        )]
+        .extend(msg.reactions.iter().map(|n| {
+            row![
+                msg.from_me.then_some(widget::space::horizontal()),
+                widget::text(if n.from_me { "(Me)" } else { &n.sender_name })
+                    .size(10)
+                    .style(tsubtitle),
+                widget::text(&n.emoji).size(14),
+            ]
+            .align_y(Alignment::Center)
+            .spacing(5)
+            .into()
+        }))
+        .align_x(if msg.from_me {
+            Alignment::End
+        } else {
+            Alignment::Start
+        })
     ]
     .into()
 }
