@@ -5,14 +5,14 @@ use whatsmeow_nchat::{Jid, MsgId};
 
 use crate::{
     jid,
-    storage::{
-        message::{MsgData, ReactionData},
-        Data, Time,
-    },
-    IntoStringError, Message,
+    storage::{Data, Time},
+    view::chat_buffer::db_load::load_chats_from_db,
+    Message,
 };
 
-const MSG_LOAD_LIMIT: usize = 200;
+mod db_load;
+pub use db_load::DbLoadResult;
+
 const MSG_LIMIT: usize = 600;
 
 pub struct ChatBuffer {
@@ -75,31 +75,12 @@ impl ChatBuffer {
 
         Ok(Task::perform(
             async move { load_chats_from_db(reverse, timestamp, viewing, db).await },
-            move |r| Message::ChatBufferLoaded(r, reverse),
+            Message::ChatBufferLoaded,
         ))
-
-        // let mut start_ts = 0;
-        // for m in loaded.rev().take(MSG_LOAD_LIMIT) {
-        //     let Some(msg_data) = db.messages_tree.get(&m.strerr()?.1).strerr()? else {
-        //         continue;
-        //     };
-        //     let message: MsgData = serde_json::from_slice(&msg_data).strerr()?;
-        //     start_ts = message.timestamp;
-        //     let rendered = msgdata_to_rendered(db, message)?;
-        //     self.messages.push_front(rendered);
-        // }
-        // self.messages.truncate(MSG_LIMIT);
-        // self.start_ts = start_ts;
     }
 
-    pub fn loaded(
-        &mut self,
-        db: &Data,
-        messages: Vec<MsgData>,
-        mut reactions: Vec<ReactionData>,
-        reverse: bool,
-    ) -> Result<(), String> {
-        if reverse {
+    pub fn loaded(&mut self, db: &Data, mut r: DbLoadResult) -> Result<(), String> {
+        if r.is_reverse {
             self.debounce_up = false;
         } else {
             self.debounce_down = false;
@@ -107,7 +88,7 @@ impl ChatBuffer {
 
         let mut ts = Time(0);
 
-        for message in messages {
+        for message in r.messages {
             ts = message.timestamp;
 
             let rendered = RenderedMessage {
@@ -117,12 +98,21 @@ impl ChatBuffer {
                     sender_name: db.display_jid(&jid!(message.sender)).to_owned(),
                     sender: jid!(message.sender),
                 },
-                replying_to: None,           // TODO
-                time_display: "".to_owned(), // TODO
+                replying_to: r
+                    .replies
+                    .remove(&message.msg_id)
+                    .and_then(|reply| Jid::parse(&reply.sender).map(|jid| (reply, jid)))
+                    .map(|(reply, sender)| RMessageCore {
+                        text: reply.content,
+                        sender_name: db.display_jid(&sender).to_owned(),
+                        sender,
+                    }),
+                time_display: message.timestamp.to_string(),
                 timestamp: message.timestamp,
                 is_edited: message.is_edited,
                 from_me: message.from_me,
-                reactions: reactions
+                reactions: r
+                    .reactions
                     .extract_if(.., |n| n.message_id == message.msg_id)
                     .filter_map(|reaction| {
                         Jid::parse(&reaction.sender_id).map(|jid| (reaction, jid))
@@ -135,15 +125,25 @@ impl ChatBuffer {
                     })
                     .collect(),
                 id: MsgId(message.msg_id),
+                hide_sender: false,
             };
-            if reverse {
+            if r.is_reverse {
                 self.messages.push_front(rendered);
             } else {
                 self.messages.push_back(rendered);
             }
         }
 
-        if reverse {
+        for i in 0..self.messages.len() {
+            if i == 0 {
+                continue;
+            }
+            if self.messages[i].message.sender == self.messages[i - 1].message.sender {
+                self.messages[i].hide_sender = true;
+            }
+        }
+
+        if r.is_reverse {
             if self.start_ts.0 > ts.0 {
                 self.start_ts = ts;
             }
@@ -195,52 +195,6 @@ impl ChatBuffer {
     }
 }
 
-async fn load_chats_from_db(
-    reverse: bool,
-    timestamp: Time,
-    viewing: String,
-    db: sqlx::Pool<sqlx::Sqlite>,
-) -> Result<(Vec<MsgData>, Vec<ReactionData>), String> {
-    let time = timestamp.0 as i64;
-    let messages = if reverse {
-        sqlx::query_as!(
-        MsgData,
-        "SELECT * FROM messages WHERE source = ? AND timestamp < ? ORDER BY timestamp DESC LIMIT ?",
-        viewing,
-        time,
-        MSG_LOAD_LIMIT as i64
-    )
-        .fetch_all(&db)
-        .await
-    } else {
-        sqlx::query_as!(
-        MsgData,
-        "SELECT * FROM messages WHERE source = ? AND timestamp > ? ORDER BY timestamp ASC LIMIT ?",
-        viewing,
-        time,
-        MSG_LOAD_LIMIT as i64
-    )
-        .fetch_all(&db)
-        .await
-    }
-    .strerr()?;
-
-    let mut query = String::from("SELECT * FROM reactions WHERE message_id IN (");
-    for i in 0..messages.len() {
-        if i != 0 {
-            query.push_str(", ");
-        }
-        query.push('?');
-    }
-    query.push(')');
-    let mut q = sqlx::query_as::<_, ReactionData>(&query);
-    for id in &messages {
-        q = q.bind(&id.msg_id);
-    }
-    let reactions = q.fetch_all(&db).await.strerr()?;
-    Ok::<_, String>((messages, reactions))
-}
-
 pub struct RenderedMessage {
     pub id: MsgId,
     pub message: RMessageCore,
@@ -251,6 +205,7 @@ pub struct RenderedMessage {
     pub timestamp: Time,
 
     pub is_edited: bool,
+    pub hide_sender: bool,
     pub from_me: bool,
 }
 

@@ -232,57 +232,73 @@ fn render_msg(msg: &RenderedMessage) -> Element<'_> {
     };
 
     let reply = msg.replying_to.as_ref().map(|reply| {
-        mbox(
-            if msg.from_me {
-                Color::Dark
-            } else {
-                Color::SecondDark
-            },
-            column![
-                widget::text(&reply.sender_name)
-                    .size(12)
-                    .shaping(Shaping::Advanced),
-                widget::text(&reply.text).shaping(Shaping::Advanced),
-            ],
-            false,
-        )
+        column![
+            mbox(
+                if msg.from_me {
+                    Color::Dark
+                } else {
+                    Color::SecondDark
+                },
+                column![
+                    widget::text(&reply.sender_name)
+                        .size(12)
+                        .shaping(Shaping::Advanced),
+                    widget::text(&reply.text).shaping(Shaping::Advanced),
+                ],
+                false,
+            ),
+            widget::space().height(5),
+        ]
     });
+
+    let show_top_bar = !msg.from_me && !msg.hide_sender;
+    let message_box = mbox(
+        if msg.from_me {
+            Color::SecondDark
+        } else {
+            Color::Dark
+        },
+        column![
+            reply,
+            show_top_bar.then_some(
+                row![
+                    widget::text(&msg.message.sender_name)
+                        .size(12)
+                        .shaping(Shaping::Advanced),
+                    time(),
+                    edited(),
+                ]
+                .align_y(Alignment::Center)
+                .spacing(10)
+            ),
+            widget::text(&msg.message.text).shaping(Shaping::Advanced),
+            (!show_top_bar).then_some(
+                row![edited(), time()]
+                    .align_y(Alignment::Center)
+                    .spacing(10)
+            )
+        ]
+        .align_x(if msg.from_me {
+            Alignment::End
+        } else {
+            Alignment::Start
+        }),
+        !msg.from_me,
+    );
 
     row![
         msg.from_me.then_some(widget::space::horizontal()),
-        column![mbox(
-            if msg.from_me {
-                Color::SecondDark
-            } else {
-                Color::Dark
-            },
-            column![
-                reply,
-                column![
-                    (!msg.from_me).then_some(
-                        row![
-                            widget::text(&msg.message.sender_name)
-                                .size(12)
-                                .shaping(Shaping::Advanced),
-                            edited(),
-                            time()
-                        ]
-                        .spacing(10)
-                    ),
-                    widget::text(&msg.message.text),
-                    msg.from_me.then_some(row![edited(), time()].spacing(10))
-                ]
-            ]
-            .spacing(5),
-            !msg.from_me,
-        )]
+        column![
+            show_top_bar.then_some(widget::space().height(5)),
+            message_box
+        ]
         .extend(msg.reactions.iter().map(|n| {
             row![
                 msg.from_me.then_some(widget::space::horizontal()),
                 widget::text(if n.from_me { "(Me)" } else { &n.sender_name })
                     .size(10)
                     .style(tsubtitle),
-                widget::text(&n.emoji).size(14),
+                widget::text(&n.emoji).size(14).shaping(Shaping::Advanced)
             ]
             .align_y(Alignment::Center)
             .spacing(5)

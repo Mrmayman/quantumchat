@@ -125,3 +125,11 @@ impl From<i64> for Time {
         Self(value as u64)
     }
 }
+
+impl std::fmt::Display for Time {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let dt = chrono::DateTime::<chrono::Utc>::from_timestamp(self.0 as i64, 0).unwrap();
+        let dt = dt.with_timezone(&chrono::Local);
+        write!(f, "{}", dt.format("%H:%M"))
+    }
+}

@@ -4,13 +4,7 @@ use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
 use whatsmeow_nchat::{ConnId, Jid};
 
 use crate::{
-    state::State,
-    storage::{
-        message::{MsgData, ReactionData},
-        Data,
-    },
-    stylesheet::styles::Theme,
-    Res,
+    state::State, storage::Data, stylesheet::styles::Theme, view::chat_buffer::DbLoadResult, Res,
 };
 
 type Recv = Arc<Mutex<UnboundedReceiver<whatsmeow_nchat::Event>>>;
@@ -36,7 +30,7 @@ pub enum Message {
     ChatMessageInput(String),
     ChatSend,
 
-    ChatBufferLoaded(Res<(Vec<MsgData>, Vec<ReactionData>)>, bool),
+    ChatBufferLoaded(Res<DbLoadResult>),
     ChatBufferShrink(usize, bool),
 }
 

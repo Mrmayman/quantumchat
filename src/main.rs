@@ -169,13 +169,14 @@ impl App {
                     ));
                 }
             }
-            Message::ChatBufferLoaded(r, reverse) => {
+            Message::ChatBufferLoaded(r) => {
                 if let State::Chats(_, Some(chat)) = &mut self.state {
-                    let (messages, reactions) = r?;
-                    let len = messages.len();
-                    chat.chat_buffer
-                        .loaded(&self.db, messages, reactions, reverse)?;
+                    let r = r?;
+                    let len = r.messages.len();
+                    let reverse = r.is_reverse;
                     let viewport = chat.chat_buffer.scroll;
+
+                    chat.chat_buffer.loaded(&self.db, r)?;
 
                     return Ok(if reverse {
                         let reverse_offset = viewport.absolute_offset_reversed();
