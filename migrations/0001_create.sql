@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS contacts
 CREATE TABLE IF NOT EXISTS contacts_lid
 (
     from_jid TEXT PRIMARY KEY NOT NULL,
-    to_jid TEXT NOT NULL
+    to_jid TEXT NOT NULL,
+    is_censored BOOLEAN NOT NULL DEFAULT 0
     -- FOREIGN KEY (to_jid) REFERENCES contacts(jid)
 );
 

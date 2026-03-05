@@ -23,7 +23,7 @@ pub struct Data {
     pub runtime: tokio::runtime::Runtime,
 
     pub contacts: HashMap<Jid, Contact>,
-    pub contacts_lid: HashMap<Jid, Jid>,
+    pub contacts_lid: HashMap<Jid, LidMapping>,
     pub contacts_sort_free: bool,
 
     pub config: Config,
@@ -67,11 +67,16 @@ impl Data {
             .block_on(sqlx::query!("select * from contacts_lid").fetch_all(&db))
             .strerr()?
             .into_iter()
-            .filter_map(|r| Some((Jid::parse(&r.from_jid)?, Jid::parse(&r.to_jid)?)))
-            // Some people hide their numbers for privacy, those fail to parse
-            // For example, +44∙∙∙∙∙∙∙∙85@s.whatsapp.net (with those dot characters)
-            // So we do filter_map
-            .collect::<HashMap<Jid, Jid>>();
+            .filter_map(|r| {
+                Some((
+                    Jid::parse(&r.from_jid)?,
+                    LidMapping {
+                        jid: Jid::parse(&r.to_jid)?,
+                        is_censored: r.to_jid.contains('∙'),
+                    },
+                ))
+            })
+            .collect::<HashMap<Jid, _>>();
 
         let config = Config::load()?;
 
@@ -109,12 +114,26 @@ impl Data {
     }
 
     pub fn display_jid<'a>(&'a self, jid: &'a Jid) -> &'a str {
-        self.contacts_lid
-            .get(jid)
-            .and_then(|n| self.contacts.get(n))
-            .or_else(|| self.contacts.get(&jid))
-            .map_or(jid.number(), |n| &n.name)
+        if let Some(lid) = self.contacts_lid.get(jid) {
+            if lid.is_censored {
+                return lid.jid.number();
+            } else if let Some(contact) = self.contacts.get(&lid.jid) {
+                return &contact.name;
+            }
+        }
+        self.contacts.get(&jid).map_or(jid.number(), |n| &n.name)
     }
+}
+
+/// Some people hide their numbers in groups for privacy,
+/// For example, +44∙∙∙∙∙∙∙∙85@s.whatsapp.net (with those dot characters)
+pub struct LidMapping {
+    /// The actual JID of the contact
+    ///
+    /// May or may not be censored (contain "∙"),
+    /// see [`Self::is_censored`]
+    pub jid: Jid,
+    pub is_censored: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

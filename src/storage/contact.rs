@@ -4,7 +4,7 @@ use whatsmeow_nchat::Jid;
 
 use crate::{
     jid,
-    storage::{Data, Time},
+    storage::{Data, LidMapping, Time},
     IntoStringError, Message,
 };
 
@@ -51,9 +51,7 @@ impl Data {
     }
 
     fn add_contact_lid(&mut self, contact: &Contact) -> Result<Task<Message>, String> {
-        if contact.jid.contains("∙") {
-            return Ok(Task::none());
-        }
+        let is_censored = contact.jid.contains("∙") || contact.name.contains("∙");
         let jid = Jid::from_phone_no(contact.name.clone());
 
         let from_jid = contact.jid.clone();
@@ -62,9 +60,10 @@ impl Data {
         let t = Task::perform(
             async move {
                 sqlx::query!(
-                    "INSERT OR REPLACE INTO contacts_lid (from_jid, to_jid) VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO contacts_lid (from_jid, to_jid, is_censored) VALUES (?, ?, ?)",
                     from_jid,
                     to_jid,
+                    is_censored
                 )
                 .execute(&db)
                 .await
@@ -72,7 +71,8 @@ impl Data {
             |r| Message::Done(r.strerr().map(|_| ())),
         );
 
-        self.contacts_lid.insert(jid!(contact.jid), jid);
+        self.contacts_lid
+            .insert(jid!(contact.jid), LidMapping { jid, is_censored });
 
         Ok(t)
     }
