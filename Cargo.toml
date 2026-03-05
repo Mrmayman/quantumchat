@@ -1,7 +1,12 @@
 [package]
 name = "quantumchat"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+
+authors = ["Mrmayman <navneetkrishna22@gmail.com>"]
+license = "GPL-3.0-only"
+readme = "README.md"
+repository = "https://github.com/Mrmayman/quantumchat/"
 
 [dependencies]
 whatsmeow-nchat = { git = "https://github.com/Mrmayman/whatsmeow-nchat.git", features = ["serde"] }
