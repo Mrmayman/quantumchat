@@ -1,5 +1,7 @@
 use iced::widget;
 
+use crate::stylesheet::styles::{ThemeColor, SHADOW};
+
 use super::{color::Color, styles::Theme};
 
 #[derive(Default, Clone, Copy)]
@@ -227,7 +229,7 @@ impl widget::pick_list::Catalog for Theme {
                 background: self.get_bg(Color::SecondDark),
                 border: self.get_border(Color::SecondDark),
             },
-            widget::pick_list::Status::Opened => widget::pick_list::Style {
+            widget::pick_list::Status::Opened { .. } => widget::pick_list::Style {
                 text_color: self.get(Color::Light),
                 placeholder_color: self.get(Color::SecondLight),
                 handle_color: self.get(Color::Light),
@@ -250,6 +252,7 @@ impl widget::overlay::menu::Catalog for Theme {
             border: self.get_border(Color::Mid),
             selected_text_color: self.get(Color::Dark),
             selected_background: self.get_bg(Color::SecondLight),
+            shadow: SHADOW,
         }
     }
 }
@@ -293,7 +296,7 @@ impl widget::text_input::Catalog for Theme {
                 value: self.get(Color::White),
                 selection: self.get(Color::Light),
             },
-            widget::text_input::Status::Focused => widget::text_input::Style {
+            widget::text_input::Status::Focused { .. } => widget::text_input::Style {
                 background: self.get_bg(Color::Dark),
                 border: self.get_border(Color::SecondLight),
                 icon: self.get(Color::Light),
@@ -377,12 +380,40 @@ impl widget::slider::Catalog for Theme {
     }
 }
 
-impl iced::application::DefaultStyle for Theme {
-    fn default_style(&self) -> iced::application::Appearance {
-        iced::application::Appearance {
+impl iced::theme::Base for Theme {
+    fn default(preference: iced::theme::Mode) -> Self {
+        Self {
+            mode: preference.into(),
+            color: ThemeColor::Purple,
+            alpha: 0.9,
+            system_dark_mode: false,
+        }
+    }
+
+    fn mode(&self) -> iced::theme::Mode {
+        self.mode.into()
+    }
+
+    fn base(&self) -> iced::theme::Style {
+        iced::theme::Style {
             background_color: iced::Color::TRANSPARENT,
             text_color: self.get(Color::Light),
         }
+    }
+
+    fn palette(&self) -> Option<iced::theme::Palette> {
+        Some(iced::theme::Palette {
+            background: self.get(Color::Dark),
+            text: self.get(Color::White),
+            primary: self.get(Color::Mid),
+            success: self.get(Color::SecondDark),
+            warning: self.get(Color::SecondLight),
+            danger: self.get(Color::ExtraDark),
+        })
+    }
+
+    fn name(&self) -> &str {
+        self.color.name()
     }
 }
 

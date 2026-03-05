@@ -1,19 +1,39 @@
-use std::{
-    borrow::Cow,
-    sync::mpsc::{self, Receiver},
-};
+/*
+QuantumChat
+Copyright (C) 2026 Mrmayman
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+use sipper::sipper;
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use tokio::{sync::Mutex, task::spawn_blocking};
 
 use iced::Task;
+use whatsmeow_nchat::{AccountState, ConnId};
 
 use crate::{
+    core::{App, IntoStringError, Message},
     state::{ChatUI, MenuChats, MenuLogin, State},
-    storage::{Data, contact::Jid},
-    stylesheet::styles::{LauncherThemeColor, LauncherThemeLightness, Theme},
+    storage::{Data, DIR},
+    stylesheet::styles::{Theme, ThemeColor, ThemeMode},
+    view::chat_buffer::ChatBuffer,
 };
 
 mod core;
+mod events;
 mod icons;
-mod init;
 mod state;
 mod storage;
 #[allow(unused)]
@@ -24,54 +44,84 @@ pub const FONT_MONO: iced::Font = iced::Font::with_name("JetBrains Mono");
 pub const FONT_DEFAULT: iced::Font = iced::Font::with_name("Inter");
 
 type Element<'a> = iced::Element<'a, Message, Theme>;
-type WEvent = whatsapp_rust::types::events::Event;
-
-#[derive(Debug, Clone)]
-enum Message {
-    CoreTick,
-    CoreEvent(iced::event::Event, iced::event::Status),
-    SidebarResize(f32),
-    ChatSelected(Jid),
-}
-
-struct App {
-    theme: Theme,
-    event_recv: Receiver<WEvent>,
-    state: State,
-    db: Data,
-}
+type Res<T = ()> = Result<T, String>;
 
 impl App {
     pub fn create() -> (Self, Task<Message>) {
-        let (sender, receiver) = mpsc::channel();
         println!("Starting up");
 
         let db = Data::new().unwrap();
 
         (
             Self {
+                id: ConnId::from_inner(0),
                 theme: Theme {
-                    lightness: LauncherThemeLightness::Dark,
-                    color: LauncherThemeColor::Purple,
+                    mode: ThemeMode::Dark,
+                    color: ThemeColor::Purple,
                     alpha: 1.0,
                     system_dark_mode: true,
                 },
-                event_recv: receiver,
+                message_drafts: HashMap::new(),
                 state: State::Chats(MenuChats::new(), None),
                 db,
+                typing: HashMap::new(),
+                tick_timer: 0,
             },
-            Task::perform(init::init(sender), |()| Message::CoreTick),
+            Task::perform(
+                spawn_blocking(|| {
+                    whatsmeow_nchat::create_connection(&*DIR, "", 1)
+                        .strerr()
+                        .map(|(a, b)| (a, Arc::new(Mutex::new(b))))
+                }),
+                |n| Message::Connected(n.strerr().flatten()),
+            ),
         )
     }
 
-    pub fn update(&mut self, message: Message) -> Task<Message> {
+    pub fn update(&mut self, message: Message) -> Res<Task<Message>> {
         match message {
-            Message::CoreTick => {
-                while let Ok(event) = self.event_recv.try_recv() {
-                    self.handle_event(event);
+            Message::Nothing => {}
+            Message::OpenMainMenu => {
+                self.state = State::Chats(MenuChats::new(), None);
+            }
+            Message::Connected(r) => {
+                let (id, recv) = r?;
+                self.id = id;
+                let acc = AccountState::get(id);
+                println!("Account: {acc:?}");
+                let login_t = if let AccountState::None = acc {
+                    Task::perform(
+                        spawn_blocking(move || whatsmeow_nchat::login(id).strerr()),
+                        |_| Message::CoreTick,
+                    )
+                } else {
+                    Task::perform(
+                        spawn_blocking(move || whatsmeow_nchat::fetch_contacts(id).strerr()),
+                        |n| Message::Done(n.strerr().flatten()),
+                    )
+                };
+
+                let event_t = Task::sip(
+                    sipper(|mut sender| async move {
+                        let mut r = recv.lock().await;
+                        while let Some(evt) = r.recv().await {
+                            sender.send(evt).await;
+                        }
+                    }),
+                    Message::WEvent,
+                    |()| Message::Nothing,
+                );
+
+                return Ok(Task::batch([event_t, login_t]));
+            }
+            Message::Done(r) => r?,
+            Message::CoreTick => self.tick(),
+            Message::CoreEvent(_event, _status) => {
+                if let iced::Event::Window(iced::window::Event::CloseRequested) = _event {
+                    whatsmeow_nchat::cleanup(self.id).unwrap();
+                    std::process::exit(0);
                 }
             }
-            Message::CoreEvent(_event, _status) => {}
             Message::SidebarResize(ratio) => {
                 if let State::Chats(menu, _) = &mut self.state {
                     if let Some(split) = menu.sidebar_split {
@@ -81,46 +131,147 @@ impl App {
             }
             Message::ChatSelected(chat_id) => {
                 if let State::Chats(_, ui) = &mut self.state {
-                    *ui = Some(ChatUI { selected: chat_id });
+                    let (chat_buffer, task) = ChatBuffer::new(&self.db, chat_id.clone())?;
+                    *ui = Some(ChatUI {
+                        selected: chat_id,
+                        chat_buffer,
+                    });
+                    return Ok(Task::batch([
+                        task,
+                        iced::widget::operation::snap_to_end("messages"),
+                    ]));
+                }
+            }
+            Message::WEvent(event) => return self.handle_event(event),
+            Message::ChatScrollLazyLoad(reverse) => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    if !chat.chat_buffer.debounce(reverse) {
+                        return chat.chat_buffer.load_begin(&self.db, reverse);
+                    }
+                }
+            }
+            Message::ChatScrolledView(v) => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    chat.chat_buffer.scroll = v;
+                }
+            }
+            Message::ChatMessageInput(msg) => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    self.message_drafts.insert(chat.selected.clone(), msg);
+                }
+            }
+            Message::ChatSend => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    let chat_id = chat.selected.clone();
+                    let Some(contents) = self.message_drafts.remove(&chat_id) else {
+                        return Ok(Task::none());
+                    };
+                    if contents.is_empty() {
+                        return Ok(Task::none());
+                    }
+                    let id = self.id;
+
+                    return Ok(Task::perform(
+                        spawn_blocking(move || {
+                            whatsmeow_nchat::send_message(
+                                id,
+                                &chat_id,
+                                &contents,
+                                None,
+                                None::<(&std::path::Path, _)>,
+                                None,
+                            )
+                            .strerr()
+                        }),
+                        |n| Message::Done(n.strerr().flatten()),
+                    ));
+                }
+            }
+            Message::ChatBufferLoaded(r) => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    let r = r?;
+                    let len = r.messages.len();
+                    let reverse = r.is_reverse;
+                    let viewport = chat.chat_buffer.scroll;
+
+                    chat.chat_buffer.loaded(&self.db, r)?;
+
+                    return Ok(if reverse {
+                        let reverse_offset = viewport.absolute_offset_reversed();
+                        iced::widget::operation::snap_to_end("messages").chain(
+                            iced::widget::operation::scroll_by(
+                                "messages",
+                                iced::widget::operation::AbsoluteOffset {
+                                    x: -reverse_offset.x,
+                                    y: -reverse_offset.y,
+                                },
+                            ),
+                        )
+                    } else {
+                        iced::widget::operation::scroll_to("messages", viewport.absolute_offset())
+                    }
+                    .chain(Task::perform(
+                        async move {
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                            Message::ChatBufferShrink(len, reverse)
+                        },
+                        |n| n,
+                    )));
+                }
+            }
+            Message::ChatBufferShrink(len, reverse) => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    chat.chat_buffer.shrink(len, reverse);
+                    let viewport = chat.chat_buffer.scroll;
+
+                    return Ok(if reverse {
+                        iced::widget::operation::scroll_to("messages", viewport.absolute_offset())
+                    } else {
+                        let reverse_offset = viewport.absolute_offset_reversed();
+                        iced::widget::operation::snap_to_end("messages").chain(
+                            iced::widget::operation::scroll_by(
+                                "messages",
+                                iced::widget::operation::AbsoluteOffset {
+                                    x: -reverse_offset.x,
+                                    y: -reverse_offset.y,
+                                },
+                            ),
+                        )
+                    });
                 }
             }
         }
-        Task::none()
+        Ok(Task::none())
     }
 
-    fn handle_event(&mut self, event: WEvent) {
-        if let WEvent::PairingQrCode { code, timeout } = &event {
-            self.state = match MenuLogin::new(code.clone(), timeout.clone()) {
-                Ok(menu) => State::Login(menu),
-                Err(err) => State::Error(format!("While generating login QR:\n{err}")),
-            };
-            return;
+    fn tick(&mut self) {
+        if self.tick_timer.is_multiple_of(5) && self.db.contacts_sort_free {
+            self.db.sort_contacts();
+            self.db.contacts_sort_free = false;
         }
-        if let State::Login(_) = &self.state {
-            self.state = State::Chats(MenuChats::new(), None);
-            return;
+        if self.db.config_autosave_free {
+            let contents =
+                serde_json::to_string_pretty(&self.db.config).expect("should normally never fail");
+            tokio::spawn(async move {
+                let p = DIR.join("config.json");
+                _ = tokio::fs::write(&p, contents).await;
+            });
+            self.db.config_autosave_free = false;
         }
 
-        match event {
-            WEvent::ContactUpdate(contact) => att(self.db.add_contact(contact)),
-            WEvent::MuteUpdate(mute) => {
-                // TODO: mute.action.mute_end_timestamp
-                att(self.db.operate_on_contact(mute.jid.into(), |contact| {
-                    contact.muted = mute.action.muted()
-                }))
-            }
-            WEvent::JoinedGroup(_) => {}
-            WEvent::PinUpdate(pin) => att(self.db.add_pin(pin.jid.into(), pin.action.pinned())),
-            WEvent::Message(msg, msg_info) => att(self.db.add_message(&msg, msg_info)),
-            WEvent::LoggedOut(_) => {} // TODO
-            _ => {
-                let message = format!("{event:?}")
-                    .split(',')
-                    .filter(|n| n.contains(['}', '{', '(', ')', '[', ']']) || !n.contains(": None"))
-                    .collect::<String>();
-                println!("{message}\n");
-            }
-        }
+        self.tick_timer = self.tick_timer.wrapping_add(1);
+    }
+
+    fn set_error(&mut self, err: String) {
+        eprintln!("ERROR: {err}");
+        self.state = State::Error(err);
+    }
+
+    fn go_to_login(&mut self, code: String, is_qr: bool) {
+        self.state = match MenuLogin::new(code.clone(), is_qr) {
+            Ok(menu) => State::Login(menu),
+            Err(err) => State::Error(format!("While generating login QR:\n{err}")),
+        };
     }
 
     #[allow(clippy::unused_self)]
@@ -141,33 +292,44 @@ fn main() {
     const WINDOW_HEIGHT: f32 = 400.0;
     const WINDOW_WIDTH: f32 = 600.0;
 
-    iced::application("QuantumChat", App::update, App::view)
-        .subscription(App::subscription)
-        // .scale_factor(App::scale_factor)
-        .theme(App::theme)
-        .settings(iced::Settings {
-            fonts: load_fonts(),
-            default_font: FONT_DEFAULT,
-            // antialiasing: true,
-            ..Default::default()
-        })
-        .window(iced::window::Settings {
-            // icon,
-            // exit_on_close_request: false,
-            size: iced::Size {
-                width: WINDOW_WIDTH,
-                height: WINDOW_HEIGHT,
-            },
-            min_size: Some(iced::Size {
-                width: 420.0,
-                height: 310.0,
-            }),
-            // decorations,
-            // transparent: true,
-            ..Default::default()
-        })
-        .run_with(move || App::create())
-        .unwrap();
+    iced::application(
+        App::create,
+        |n: &mut App, m| match n.update(m) {
+            Ok(n) => n,
+            Err(err) => {
+                n.set_error(err);
+                Task::none()
+            }
+        },
+        App::view,
+    )
+    .title(|_: &App| "QuantumChat".to_owned())
+    .subscription(App::subscription)
+    // .scale_factor(App::scale_factor)
+    .theme(App::theme)
+    .settings(iced::Settings {
+        fonts: load_fonts(),
+        default_font: FONT_DEFAULT,
+        // antialiasing: true,
+        ..Default::default()
+    })
+    .window(iced::window::Settings {
+        // icon,
+        exit_on_close_request: false,
+        size: iced::Size {
+            width: WINDOW_WIDTH,
+            height: WINDOW_HEIGHT,
+        },
+        min_size: Some(iced::Size {
+            width: 420.0,
+            height: 310.0,
+        }),
+        // decorations,
+        // transparent: true,
+        ..Default::default()
+    })
+    .run()
+    .unwrap();
 }
 
 fn load_fonts() -> Vec<Cow<'static, [u8]>> {
@@ -185,10 +347,4 @@ fn load_fonts() -> Vec<Cow<'static, [u8]>> {
             .as_slice()
             .into(),
     ]
-}
-
-fn att<T>(r: Result<T, String>) {
-    if let Err(e) = r {
-        println!("Error: {}", e);
-    }
 }

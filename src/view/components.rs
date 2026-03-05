@@ -1,17 +1,15 @@
-use iced::{Alignment, Length, widget};
+use iced::{widget, Alignment};
 
 use crate::{
+    stylesheet::{color::Color, styles::Theme},
     Element, Message,
-    stylesheet::{color::Color, styles::Theme, widgets::StyleButton},
 };
 
 pub fn center<'a>(child: impl Into<Element<'a>>) -> widget::Container<'a, Message, Theme> {
-    widget::center(child)
-        .style(|_| widget::container::Style::default())
-        .into()
+    widget::center(child).style(|_| widget::container::Style::default())
 }
 
-pub fn sidebar_button<'a, A: PartialEq>(
+/*pub fn sidebar_button<'a, A: PartialEq>(
     current: &A,
     selected: Option<&A>,
     text: impl Into<Element<'a>>,
@@ -24,7 +22,7 @@ pub fn sidebar_button<'a, A: PartialEq>(
         .width(Length::Fill);
 
     underline_maybe(button, Color::SecondDark, !is_selected)
-}
+}*/
 
 pub fn tsubtitle(t: &Theme) -> widget::text::Style {
     t.style_text(Color::SecondLight)
@@ -42,9 +40,9 @@ pub fn underline<'a>(e: impl Into<Element<'a>>, color: Color) -> widget::Stack<'
     widget::stack!(
         widget::column![e.into()],
         widget::column![
-            widget::vertical_space(),
-            widget::horizontal_rule(1).style(move |t: &Theme| t.style_rule(color, 1)),
-            widget::Space::with_height(1),
+            widget::space::vertical(),
+            widget::rule::horizontal(1).style(move |t: &Theme| t.style_rule(color, 1)),
+            widget::space().height(1),
         ]
     )
 }
@@ -59,13 +57,15 @@ pub fn sbox<'a>(
 pub fn button_with_icon<'a>(
     icon: impl Into<Element<'a>>,
     text: &'a str,
-    size: u16,
+    size: u32,
 ) -> widget::Button<'a, Message, Theme> {
     widget::button(
-        widget::row![icon.into()]
-            .push_maybe((!text.is_empty()).then_some(widget::text(text).size(size)))
-            .align_y(Alignment::Center)
-            .spacing(size as f32 / 1.6),
+        widget::row![
+            icon.into(),
+            (!text.is_empty()).then_some(widget::text(text).size(size))
+        ]
+        .align_y(Alignment::Center)
+        .spacing(size as f32 / 1.6),
     )
     .padding([7, 13])
 }

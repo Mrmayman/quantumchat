@@ -1,22 +1,27 @@
 use std::{fmt::Display, str::FromStr};
 
 use iced::widget::container::Style;
-use iced::widget::scrollable::Rail;
-use iced::{Border, widget};
+use iced::widget::scrollable::{AutoScroll, Rail};
+use iced::{widget, Border};
 use serde::{Deserialize, Serialize};
 
 use crate::stylesheet::color::{ADWAITA_DARK, ADWAITA_LIGHT};
 
 use super::{
-    color::{BROWN, CATPPUCCIN, Color, HALLOWEEN, PURPLE, SKY_BLUE, TEAL},
+    color::{Color, BROWN, CATPPUCCIN, HALLOWEEN, PURPLE, SKY_BLUE, TEAL},
     widgets::{IsFlat, StyleButton, StyleScrollable},
 };
 
 pub const BORDER_WIDTH: f32 = 1.0;
 pub const BORDER_RADIUS: f32 = 8.0;
+pub const SHADOW: iced::Shadow = iced::Shadow {
+    color: iced::Color::from_rgba(0.0, 0.0, 0.0, 0.2),
+    offset: iced::Vector::new(0.0, 0.0),
+    blur_radius: 16.0,
+};
 
 #[derive(Serialize, Deserialize, Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub enum LauncherThemeColor {
+pub enum ThemeColor {
     Brown,
     #[serde(rename = "Sky Blue")]
     SkyBlue,
@@ -29,7 +34,7 @@ pub enum LauncherThemeColor {
     Purple,
 }
 
-impl LauncherThemeColor {
+impl ThemeColor {
     pub const ALL: &'static [Self] = &[
         Self::Purple,
         Self::Brown,
@@ -39,45 +44,57 @@ impl LauncherThemeColor {
         Self::Halloween,
         Self::Adwaita,
     ];
+
+    pub const fn name(&self) -> &str {
+        match self {
+            Self::Brown => "Brown",
+            Self::Purple => "Purple",
+            Self::SkyBlue => "Sky Blue",
+            Self::Catppuccin => "Catppuccin",
+            Self::Teal => "Teal",
+            Self::Halloween => "Halloween",
+            Self::Adwaita => "Adwaita",
+        }
+    }
 }
 
-impl Display for LauncherThemeColor {
+impl Display for ThemeColor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                LauncherThemeColor::Brown => "Brown",
-                LauncherThemeColor::Purple => "Purple",
-                LauncherThemeColor::SkyBlue => "Sky Blue",
-                LauncherThemeColor::Catppuccin => "Catppuccin",
-                LauncherThemeColor::Teal => "Teal",
-                LauncherThemeColor::Halloween => "Halloween",
-                LauncherThemeColor::Adwaita => "Adwaita",
+                ThemeColor::Brown => "Brown",
+                ThemeColor::Purple => "Purple",
+                ThemeColor::SkyBlue => "Sky Blue",
+                ThemeColor::Catppuccin => "Catppuccin",
+                ThemeColor::Teal => "Teal",
+                ThemeColor::Halloween => "Halloween",
+                ThemeColor::Adwaita => "Adwaita",
             },
         )
     }
 }
 
-impl FromStr for LauncherThemeColor {
+impl FromStr for ThemeColor {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
-            "Brown" => LauncherThemeColor::Brown,
-            "Purple" => LauncherThemeColor::Purple,
-            "Sky Blue" => LauncherThemeColor::SkyBlue,
-            "Catppuccin" => LauncherThemeColor::Catppuccin,
-            "Teal" => LauncherThemeColor::Teal,
-            "Halloween" => LauncherThemeColor::Halloween,
-            "Adwaita" => LauncherThemeColor::Adwaita,
-            _ => LauncherThemeColor::default(),
+            "Brown" => ThemeColor::Brown,
+            "Purple" => ThemeColor::Purple,
+            "Sky Blue" => ThemeColor::SkyBlue,
+            "Catppuccin" => ThemeColor::Catppuccin,
+            "Teal" => ThemeColor::Teal,
+            "Halloween" => ThemeColor::Halloween,
+            "Adwaita" => ThemeColor::Adwaita,
+            _ => ThemeColor::default(),
         })
     }
 }
 
 #[derive(Serialize, Deserialize, Copy, Clone, Default, Debug, PartialEq, Eq)]
-pub enum LauncherThemeLightness {
+pub enum ThemeMode {
     Light,
     Dark,
     #[default]
@@ -85,18 +102,38 @@ pub enum LauncherThemeLightness {
     Auto,
 }
 
-impl LauncherThemeLightness {
+impl From<iced::theme::Mode> for ThemeMode {
+    fn from(mode: iced::theme::Mode) -> Self {
+        match mode {
+            iced::theme::Mode::None => ThemeMode::Auto,
+            iced::theme::Mode::Light => ThemeMode::Light,
+            iced::theme::Mode::Dark => ThemeMode::Dark,
+        }
+    }
+}
+
+impl From<ThemeMode> for iced::theme::Mode {
+    fn from(val: ThemeMode) -> Self {
+        match val {
+            ThemeMode::Light => iced::theme::Mode::Light,
+            ThemeMode::Dark => iced::theme::Mode::Dark,
+            ThemeMode::Auto => iced::theme::Mode::None,
+        }
+    }
+}
+
+impl ThemeMode {
     pub const ALL: &[Self] = &[Self::Light, Self::Dark, Self::Auto];
 }
-impl Display for LauncherThemeLightness {
+impl Display for ThemeMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                LauncherThemeLightness::Light => "Light",
-                LauncherThemeLightness::Dark => "Dark",
-                LauncherThemeLightness::Auto => "Auto",
+                ThemeMode::Light => "Light",
+                ThemeMode::Dark => "Dark",
+                ThemeMode::Auto => "Auto",
             },
         )
     }
@@ -104,18 +141,18 @@ impl Display for LauncherThemeLightness {
 
 #[derive(Clone, Default, Debug)]
 pub struct Theme {
-    pub lightness: LauncherThemeLightness,
-    pub color: LauncherThemeColor,
+    pub mode: ThemeMode,
+    pub color: ThemeColor,
     pub alpha: f32,
     pub system_dark_mode: bool,
 }
 
 impl Theme {
     pub fn is_light(&self) -> bool {
-        match self.lightness {
-            LauncherThemeLightness::Light => true,
-            LauncherThemeLightness::Dark => false,
-            LauncherThemeLightness::Auto => !self.system_dark_mode,
+        match self.mode {
+            ThemeMode::Light => true,
+            ThemeMode::Dark => false,
+            ThemeMode::Auto => !self.system_dark_mode,
         }
     }
 
@@ -133,7 +170,7 @@ impl Theme {
             }
         }
 
-        if let LauncherThemeColor::Adwaita = self.color {
+        if let ThemeColor::Adwaita = self.color {
             (
                 if self.is_light() {
                     &ADWAITA_LIGHT
@@ -156,13 +193,13 @@ impl Theme {
 
     fn get_palette(&self) -> &super::color::Palette {
         match self.color {
-            LauncherThemeColor::Brown => &BROWN,
-            LauncherThemeColor::Purple => &PURPLE,
-            LauncherThemeColor::SkyBlue => &SKY_BLUE,
-            LauncherThemeColor::Catppuccin => &CATPPUCCIN,
-            LauncherThemeColor::Teal => &TEAL,
-            LauncherThemeColor::Halloween => &HALLOWEEN,
-            LauncherThemeColor::Adwaita => unreachable!(),
+            ThemeColor::Brown => &BROWN,
+            ThemeColor::Purple => &PURPLE,
+            ThemeColor::SkyBlue => &SKY_BLUE,
+            ThemeColor::Catppuccin => &CATPPUCCIN,
+            ThemeColor::Teal => &TEAL,
+            ThemeColor::Halloween => &HALLOWEEN,
+            ThemeColor::Adwaita => unreachable!(),
         }
     }
 
@@ -215,7 +252,7 @@ impl Theme {
             background: Some(self.get_bg(Color::ExtraDark)),
             border,
             scroller: widget::scrollable::Scroller {
-                color: self.get(Color::SecondDark),
+                background: self.get_bg(Color::SecondDark),
                 border: self.get_border_style(&style, Color::Mid),
             },
         };
@@ -228,10 +265,21 @@ impl Theme {
                 },
                 border,
                 shadow: iced::Shadow::default(),
+                snap: false,
             },
             gap: None,
             vertical_rail: rail,
             horizontal_rail: rail,
+            auto_scroll: self.scrollable_autoscroll(),
+        }
+    }
+
+    fn scrollable_autoscroll(&self) -> AutoScroll {
+        AutoScroll {
+            background: self.get_bg(Color::ExtraDark),
+            border: self.get_border(Color::Mid),
+            shadow: SHADOW,
+            icon: self.get(Color::SecondLight),
         }
     }
 
@@ -256,6 +304,7 @@ impl Theme {
             vertical_rail,
             horizontal_rail,
             gap: None,
+            auto_scroll: self.scrollable_autoscroll(),
         }
     }
 
@@ -264,10 +313,13 @@ impl Theme {
             background: Some(self.get_bg(Color::ExtraDark)),
             border,
             scroller: widget::scrollable::Scroller {
-                color: if hovered {
-                    self.get(Color::Mid)
+                background: if hovered {
+                    self.get_bg(Color::Mid)
                 } else {
-                    blend_colors(self.get(Color::SecondDark), self.get(Color::Mid))
+                    iced::Background::Color(blend_colors(
+                        self.get(Color::SecondDark),
+                        self.get(Color::Mid),
+                    ))
                 },
                 border: self.get_border_style(&style, Color::Light),
             },
@@ -292,10 +344,13 @@ impl Theme {
             background: Some(self.get_bg(Color::ExtraDark)),
             border,
             scroller: widget::scrollable::Scroller {
-                color: if is_vertical_scrollbar_dragged {
-                    self.get(Color::White)
+                background: if is_vertical_scrollbar_dragged {
+                    self.get_bg(Color::White)
                 } else {
-                    blend_colors(self.get(Color::Mid), self.get(Color::SecondDark))
+                    iced::Background::Color(blend_colors(
+                        self.get(Color::Mid),
+                        self.get(Color::SecondDark),
+                    ))
                 },
                 border: self.get_border_style(&style, Color::Light),
             },
@@ -304,7 +359,7 @@ impl Theme {
             background: Some(self.get_bg(Color::Dark)),
             border,
             scroller: widget::scrollable::Scroller {
-                color: self.get(if is_horizontal_scrollbar_dragged {
+                background: self.get_bg(if is_horizontal_scrollbar_dragged {
                     Color::White
                 } else {
                     Color::Mid
@@ -317,6 +372,7 @@ impl Theme {
             vertical_rail: rail_v,
             horizontal_rail: rail_h,
             gap: None,
+            auto_scroll: self.scrollable_autoscroll(),
         }
     }
 
@@ -329,15 +385,16 @@ impl Theme {
             },
             border,
             shadow: iced::Shadow::default(),
+            snap: false,
         }
     }
 
     pub fn style_rule(&self, color: Color, thickness: u16) -> widget::rule::Style {
         widget::rule::Style {
             color: self.get(color),
-            width: thickness,
             radius: 0.into(),
             fill_mode: widget::rule::FillMode::Full,
+            snap: false,
         }
     }
 
@@ -423,7 +480,7 @@ impl Theme {
     }
 
     fn get_bg_color(&self) -> iced::Background {
-        let c = if let LauncherThemeColor::Adwaita = self.color {
+        let c = if let ThemeColor::Adwaita = self.color {
             self.get(Color::Dark)
         } else {
             blend_colors(self.get(Color::Dark), self.get(Color::ExtraDark))
@@ -458,10 +515,11 @@ impl Theme {
         style: StyleScrollable,
     ) -> widget::scrollable::Style {
         match status {
-            widget::scrollable::Status::Active => self.style_scrollable_active(style),
+            widget::scrollable::Status::Active { .. } => self.style_scrollable_active(style),
             widget::scrollable::Status::Hovered {
                 is_horizontal_scrollbar_hovered,
                 is_vertical_scrollbar_hovered,
+                ..
             } => self.style_scrollable_hovered(
                 style,
                 is_vertical_scrollbar_hovered,
@@ -470,6 +528,7 @@ impl Theme {
             widget::scrollable::Status::Dragged {
                 is_horizontal_scrollbar_dragged,
                 is_vertical_scrollbar_dragged,
+                ..
             } => self.style_scrollable_dragged(
                 style,
                 is_vertical_scrollbar_dragged,
@@ -661,7 +720,6 @@ impl Theme {
             widget::text_editor::Status::Active => widget::text_editor::Style {
                 background: self.get_bg(Color::ExtraDark),
                 border: self.get_border(Color::Dark),
-                icon: self.get(Color::Light),
                 placeholder: self.get(Color::Light),
                 value: self.get(Color::White),
                 selection: self.get(Color::Dark),
@@ -669,15 +727,13 @@ impl Theme {
             widget::text_editor::Status::Hovered => widget::text_editor::Style {
                 background: self.get_bg(Color::ExtraDark),
                 border: self.get_border(Color::SecondDark),
-                icon: self.get(Color::Light),
                 placeholder: self.get(Color::Light),
                 value: self.get(Color::White),
                 selection: self.get(Color::Dark),
             },
-            widget::text_editor::Status::Focused => widget::text_editor::Style {
+            widget::text_editor::Status::Focused { .. } => widget::text_editor::Style {
                 background: self.get_bg(Color::Dark),
                 border: self.get_border(Color::SecondDark),
-                icon: self.get(Color::Light),
                 placeholder: self.get(Color::Light),
                 value: self.get(Color::White),
                 selection: self.get(Color::SecondDark),
@@ -685,7 +741,6 @@ impl Theme {
             widget::text_editor::Status::Disabled => widget::text_editor::Style {
                 background: self.get_bg(Color::SecondDark),
                 border: self.get_border(Color::Mid),
-                icon: self.get(Color::Light),
                 placeholder: self.get(Color::Light),
                 value: self.get(Color::White),
                 selection: self.get(Color::Dark),
@@ -707,16 +762,14 @@ impl Theme {
                 widget::text_editor::Style {
                     background: self.get_bg(Color::ExtraDark),
                     border,
-                    icon: self.get(Color::Light),
                     placeholder: self.get(Color::Light),
                     value: self.get(Color::White),
                     selection: self.get(Color::Dark),
                 }
             }
-            widget::text_editor::Status::Focused => widget::text_editor::Style {
+            widget::text_editor::Status::Focused { .. } => widget::text_editor::Style {
                 background: self.get_bg(Color::ExtraDark),
                 border,
-                icon: self.get(Color::Light),
                 placeholder: self.get(Color::Light),
                 value: self.get(Color::White),
                 selection: self.get(Color::SecondDark),
@@ -724,7 +777,6 @@ impl Theme {
             widget::text_editor::Status::Disabled => widget::text_editor::Style {
                 background: self.get_bg(Color::ExtraDark),
                 border,
-                icon: self.get(Color::Light),
                 placeholder: self.get(Color::Light),
                 value: self.get(Color::SecondLight),
                 selection: self.get(Color::Dark),
@@ -743,7 +795,11 @@ fn get_radius_semi(radii: [bool; 4]) -> iced::border::Radius {
 }
 
 fn radius(t: bool) -> f32 {
-    if t { BORDER_RADIUS } else { 0.0 }
+    if t {
+        BORDER_RADIUS
+    } else {
+        0.0
+    }
 }
 
 fn blend_colors(color1: iced::Color, color2: iced::Color) -> iced::Color {

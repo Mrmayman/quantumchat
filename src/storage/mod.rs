@@ -1,72 +1,154 @@
 use std::{collections::HashMap, path::PathBuf, sync::LazyLock};
 
+use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
+use whatsmeow_nchat::Jid;
+
 use crate::{
-    core::IntoStringError,
-    storage::{
-        config::Config,
-        contact::{Contact, Jid},
-    },
+    storage::{config::Config, contact::Contact},
+    IntoStringError,
 };
 
 pub mod config;
 pub mod contact;
 pub mod message;
 
-pub static DIR: LazyLock<PathBuf> = LazyLock::new(|| dirs::data_dir().unwrap().join("QuantumChat"));
+pub static DIR: LazyLock<PathBuf> = LazyLock::new(|| {
+    let p = dirs::data_dir().unwrap().join("QuantumChat");
+    _ = std::fs::create_dir_all(&p);
+    p
+});
 
 pub struct Data {
-    db: sled::Db,
+    pub db: sqlx::SqlitePool,
+    pub runtime: tokio::runtime::Runtime,
 
-    pub contacts: HashMap<String, Contact>,
-    pub contacts_tree: sled::Tree,
-    pub messages_tiebreaker: u32,
-    pub messages_tree: sled::Tree,
+    pub contacts: HashMap<Jid, Contact>,
+    pub contacts_lid: HashMap<Jid, LidMapping>,
+    pub contacts_sort_free: bool,
 
     pub config: Config,
+    pub config_autosave_free: bool,
     pub order: Vec<Jid>,
+    pub latest_timestamp: Time,
 }
 
 impl Data {
     pub fn new() -> Result<Self, String> {
-        let db = sled::open(DIR.join("data")).strerr()?;
-        let contacts_tree = db.open_tree("contacts").strerr()?;
-        let messages_tree = db.open_tree("messages").strerr()?;
+        let opts = SqliteConnectOptions::new()
+            .filename(DIR.join("main.db"))
+            .create_if_missing(true)
+            .optimize_on_close(true, None)
+            // .pragma("cache_size", "-16384")
+            .statement_cache_capacity(4)
+            .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+            .synchronous(sqlx::sqlite::SqliteSynchronous::Normal);
 
-        let contacts = contacts_tree
-            .iter()
+        let runtime = tokio::runtime::Runtime::new().strerr()?;
+
+        let db = runtime.block_on(SqlitePool::connect_with(opts)).strerr()?;
+        // .use_compression(true)
+        // .compression_factor(2)
+        // .mode(sled::Mode::HighThroughput)
+
+        runtime
+            .block_on(sqlx::migrate!("./migrations").run(&db))
+            .strerr()?;
+
+        let contacts = runtime
+            .block_on(sqlx::query_as!(Contact, "select * from contacts").fetch_all(&db))
+            .strerr()?
+            .into_iter()
             .map(|r| {
-                let (k, v) = r.strerr()?;
-                Ok::<_, String>((
-                    String::from_utf8_lossy(&k).to_string(),
-                    serde_json::from_slice::<Contact>(&v).strerr()?,
+                Ok::<_, String>((Jid::parse(&r.jid).ok_or_else(|| "JID error".to_owned())?, r))
+            })
+            .collect::<Result<HashMap<Jid, Contact>, String>>()?;
+
+        let contacts_lid = runtime
+            .block_on(sqlx::query!("select * from contacts_lid").fetch_all(&db))
+            .strerr()?
+            .into_iter()
+            .filter_map(|r| {
+                Some((
+                    Jid::parse(&r.from_jid)?,
+                    LidMapping {
+                        jid: Jid::parse(&r.to_jid)?,
+                        is_censored: r.to_jid.contains('∙'),
+                    },
                 ))
             })
-            .collect::<Result<HashMap<String, Contact>, String>>()?;
+            .collect::<HashMap<Jid, _>>();
 
-        let config = if let Ok(Some(config)) = db.get("config") {
-            serde_json::from_slice::<Config>(&config).strerr()?
-        } else {
-            let config = Config { pins: Vec::new() };
-            db.insert("config", serde_json::to_vec(&config).strerr()?)
-                .strerr()?;
-            config
-        };
+        let config = Config::load()?;
 
-        let order = contacts
+        let order: Vec<Jid> = contacts
             .keys()
-            .cloned()
-            .map(|n| Jid::from_key(&n))
             .filter(|n| !config.pins.contains(n))
+            .cloned()
             .collect();
 
         Ok(Data {
             db,
             contacts,
-            contacts_tree,
-            messages_tree,
-            messages_tiebreaker: 0,
+            contacts_lid,
             config,
             order,
+            runtime,
+            latest_timestamp: Time(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|n| n.as_secs())
+                    .unwrap_or_default(),
+            ),
+            config_autosave_free: false,
+            contacts_sort_free: true,
         })
+    }
+
+    pub fn sort_contacts(&mut self) {
+        self.order.sort_unstable_by(|a, b| {
+            let (Some(ca), Some(cb)) = (self.contacts.get(a), self.contacts.get(b)) else {
+                return std::cmp::Ordering::Equal;
+            };
+            cb.last_message_time.cmp(&ca.last_message_time)
+        });
+    }
+
+    pub fn display_jid<'a>(&'a self, jid: &'a Jid) -> &'a str {
+        if let Some(lid) = self.contacts_lid.get(jid) {
+            if lid.is_censored {
+                return lid.jid.number();
+            } else if let Some(contact) = self.contacts.get(&lid.jid) {
+                return &contact.name;
+            }
+        }
+        self.contacts.get(&jid).map_or(jid.number(), |n| &n.name)
+    }
+}
+
+/// Some people hide their numbers in groups for privacy,
+/// For example, +44∙∙∙∙∙∙∙∙85@s.whatsapp.net (with those dot characters)
+pub struct LidMapping {
+    /// The actual JID of the contact
+    ///
+    /// May or may not be censored (contain "∙"),
+    /// see [`Self::is_censored`]
+    pub jid: Jid,
+    pub is_censored: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Time(pub u64);
+
+impl From<i64> for Time {
+    fn from(value: i64) -> Self {
+        Self(value as u64)
+    }
+}
+
+impl std::fmt::Display for Time {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let dt = chrono::DateTime::<chrono::Utc>::from_timestamp(self.0 as i64, 0).unwrap();
+        let dt = dt.with_timezone(&chrono::Local);
+        write!(f, "{}", dt.format("%H:%M"))
     }
 }

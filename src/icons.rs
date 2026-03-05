@@ -19,7 +19,7 @@ pub fn icon<'a>(codepoint: char) -> iced::widget::Text<'a, Theme> {
     iced::widget::text(codepoint).font(ICON_FONT)
 }
 
-pub fn icon_with_size<'a>(codepoint: char, size: u16) -> iced::widget::Text<'a, Theme> {
+pub fn icon_with_size<'a>(codepoint: char, size: u32) -> iced::widget::Text<'a, Theme> {
     iced::widget::text(codepoint).font(ICON_FONT).size(size)
 }
 
@@ -32,7 +32,7 @@ macro_rules! icon_define {
             }
 
             #[allow(dead_code)]
-            pub fn [<$name _s>]<'a>(size: u16) -> iced::widget::Text<'a, Theme> {
+            pub fn [<$name _s>]<'a>(size: u32) -> iced::widget::Text<'a, Theme> {
                 icon_with_size($unicode, size)
             }
         }

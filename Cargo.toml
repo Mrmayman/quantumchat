@@ -3,29 +3,45 @@ name = "quantumchat"
 version = "0.1.0"
 edition = "2024"
 
+authors = ["Mrmayman <navneetkrishna22@gmail.com>"]
+license = "GPL-3.0-only"
+readme = "README.md"
+repository = "https://github.com/Mrmayman/quantumchat/"
+
 [dependencies]
-iced = { version = "0.13", default-features = false, features = [
+whatsmeow-nchat = { git = "https://github.com/Mrmayman/whatsmeow-nchat.git", features = ["serde"] }
+
+iced = { version = "0.14", default-features = false, features = [
     "tokio",
+    "sipper",
     # "image",
     # "svg",
     # "lazy",
     # "advanced",
     "qr_code",
+
+    # Rendering/Backend
     "wgpu",
-    "tiny-skia"
+    "tiny-skia",
+    "x11",
+    "wayland",
+    # Appearance
+    # "crisp",
+    "web-colors",
 ] }
 paste = "1"
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = "1"
+tokio = { version = "1", features = ["sync", "macros"] }
+chrono = "0.4.*"
 
-whatsapp-rust = "0.2"
-wacore-binary = "0.2"
-waproto = "0.2"
-
-sled = "0.34"
+sqlx = { version = "0.8.*", default-features = false, features = [
+    "macros", "migrate", "derive",
+    "runtime-tokio", "sqlite", "chrono", "json"
+]}
 dirs = "6"
+sipper = "0.1"
 
 [profile.dev.package."*"]
 opt-level = 3
