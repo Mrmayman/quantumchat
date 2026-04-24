@@ -1,10 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
-use tokio::sync::{mpsc::UnboundedReceiver, Mutex};
+use tokio::sync::{Mutex, mpsc::UnboundedReceiver};
 use whatsmeow_nchat::{ConnId, Jid};
 
 use crate::{
-    state::State, storage::Data, stylesheet::styles::Theme, view::chat_buffer::DbLoadResult, Res,
+    Res, state::State, storage::Data, stylesheet::styles::Theme, view::chat_buffer::DbLoadResult,
 };
 
 type Recv = Arc<Mutex<UnboundedReceiver<whatsmeow_nchat::Event>>>;

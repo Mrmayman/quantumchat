@@ -2,9 +2,8 @@ use iced::Task;
 use sqlx::prelude::FromRow;
 
 use crate::{
-    jid,
+    IntoStringError, Message, jid,
     storage::{Data, Time},
-    IntoStringError, Message,
 };
 
 #[derive(Debug, Clone, FromRow)]

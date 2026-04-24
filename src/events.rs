@@ -2,9 +2,9 @@ use iced::Task;
 use whatsmeow_nchat::{ChatEvent, Event, Jid};
 
 use crate::{
-    state::{MenuChats, State},
-    storage::{contact::Contact, message::MsgData, Time},
     App, IntoStringError, Message,
+    state::{MenuChats, State},
+    storage::{Time, contact::Contact, message::MsgData},
 };
 
 impl App {

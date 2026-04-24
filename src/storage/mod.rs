@@ -1,11 +1,11 @@
 use std::{collections::HashMap, path::PathBuf, sync::LazyLock};
 
-use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
+use sqlx::{SqlitePool, sqlite::SqliteConnectOptions};
 use whatsmeow_nchat::Jid;
 
 use crate::{
-    storage::{config::Config, contact::Contact},
     IntoStringError,
+    storage::{config::Config, contact::Contact},
 };
 
 pub mod config;

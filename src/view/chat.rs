@@ -1,21 +1,20 @@
 use crate::{
-    icons,
+    App, Element, Message, icons,
     state::{ChatUI, MenuChats},
     stylesheet::{
         color::Color,
-        styles::{Theme, BORDER_RADIUS},
+        styles::{BORDER_RADIUS, Theme},
         widgets::StyleButton,
     },
     view::{
         chat_buffer::RenderedMessage,
         components::{button_with_icon, sbox, tsubtitle, underline_maybe},
     },
-    App, Element, Message,
 };
 
 use iced::{
-    widget::{self, column, row, text::Shaping},
     Alignment, Length,
+    widget::{self, column, row, text::Shaping},
 };
 use whatsmeow_nchat::Jid;
 
