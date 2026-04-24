@@ -2,6 +2,7 @@ use iced::{
     Alignment,
     widget::{self, column, row, text::Shaping},
 };
+use whatsmeow_nchat::Jid;
 
 use crate::{
     Element,
@@ -114,11 +115,15 @@ fn msg_footer(msg: &RenderedMessage) -> widget::Row<'_, Message, Theme> {
         .spacing(10)
 }
 
-fn msg_header(msg: &RenderedMessage) -> widget::Row<'_, Message, Theme> {
+pub fn sender_link<'a>(name: String, jid: Jid) -> widget::text::Rich<'a, Jid, Message, Theme> {
+    widget::rich_text([widget::span(name).link(jid)])
+        .on_link_click(|n: Jid| Message::ChatOpenProfile(Some(n)))
+        .size(12)
+}
+
+fn msg_header<'a>(msg: &'a RenderedMessage) -> widget::Row<'a, Message, Theme> {
     row![
-        widget::text(&msg.message.sender_name)
-            .size(12)
-            .shaping(Shaping::Advanced),
+        sender_link(msg.message.sender_name.clone(), msg.message.sender.clone()),
         time(msg),
         edited(msg),
     ]
@@ -134,9 +139,7 @@ fn view_reply(msg: &RenderedMessage) -> Option<widget::Column<'_, Message, Theme
     msg.replying_to.as_ref().map(|reply| {
         column![
             widget::button(column![
-                widget::text(&reply.sender_name)
-                    .size(12)
-                    .shaping(Shaping::Advanced),
+                sender_link(msg.message.sender_name.clone(), msg.message.sender.clone()),
                 widget::text(&reply.text).shaping(Shaping::Advanced),
             ])
             .style(|t: &Theme, s| t.style_button(

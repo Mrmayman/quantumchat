@@ -33,6 +33,8 @@ pub enum Message {
 
     ChatBufferLoaded(Res<DbLoadResult>),
     ChatBufferShrink(usize, bool),
+
+    ChatOpenProfile(Option<Jid>),
 }
 
 pub struct App {

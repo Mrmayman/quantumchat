@@ -243,6 +243,11 @@ impl App {
                 }
             }
             Message::ChatScrollToReply(msg_id) => return Ok(self.scroll_to_reply(msg_id)),
+            Message::ChatOpenProfile(jid) => {
+                if let State::Chats(menu, _) = &mut self.state {
+                    menu.opened_profile = jid;
+                }
+            }
         }
         Ok(Task::none())
     }

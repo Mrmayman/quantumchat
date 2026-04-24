@@ -24,10 +24,10 @@ impl App {
                 .into()
             } else if let Some(ui) = ui {
                 row![
-                    self.view_chats_page(ui),
+                    self.view_chats_page(ui).width(Length::FillPortion(2)),
                     menu.opened_profile
                         .as_ref()
-                        .map(|jid| self.view_profile(jid)),
+                        .map(|jid| self.view_profile(jid).width(Length::FillPortion(1))),
                 ]
                 .into()
             } else {
@@ -68,9 +68,11 @@ impl App {
 
         widget::container(widget::column![
             sbox(
-                widget::text(self.db.display_jid(&ui.selected))
-                    .size(20)
-                    .shaping(Shaping::Advanced),
+                msg::sender_link(
+                    self.db.display_jid(&ui.selected).to_owned(),
+                    ui.selected.clone()
+                )
+                .size(20),
                 Color::Dark
             )
             .width(Length::Fill)
@@ -204,10 +206,39 @@ impl App {
         .into()
     }
 
-    fn view_profile<'a>(&'a self, jid: &'a Jid) -> Element<'a> {
+    fn view_profile<'a>(&'a self, jid: &'a Jid) -> widget::Container<'a, Message, Theme> {
+        fn viewbox<'a>(e: impl Into<Element<'a>>) -> widget::Container<'a, Message, Theme> {
+            widget::container(e)
+                .style(|t: &Theme| widget::container::Style {
+                    border: {
+                        iced::Border {
+                            color: t.get(Color::SecondDark),
+                            width: 1.0,
+                            radius: 0.0.into(),
+                        }
+                    },
+                    background: Some(t.get_bg(Color::Dark)),
+                    ..Default::default()
+                })
+                .height(Length::Fill)
+                .padding(16)
+        }
+
+        let close_btn = widget::button(icons::close_s(14))
+            .padding(8)
+            .on_press(Message::ChatOpenProfile(None));
+
         let contact = if let Some(lid) = self.db.contacts_lid.get(jid) {
             if lid.is_censored {
-                todo!("Censored for privacy")
+                return viewbox(
+                    column![
+                        close_btn,
+                        widget::text!(
+                            "This person's details are hidden for privacy\n(JID: {jid:?})"
+                        )
+                    ]
+                    .spacing(10),
+                );
             } else if let Some(contact) = self.db.contacts.get(&lid.jid) {
                 Some(contact)
             } else {
@@ -217,19 +248,27 @@ impl App {
             self.db.contacts.get(jid)
         };
         let Some(contact) = contact else {
-            todo!("No contact")
+            return viewbox(
+                column![
+                    close_btn,
+                    widget::text!("Error: Couldn't load details of JID: {jid:?}")
+                ]
+                .spacing(10),
+            );
         };
 
-        widget::container(
+        viewbox(
             column![
-                // TODO: Profile pics
-                widget::text(&contact.name).size(20),
+                row![close_btn, widget::text(&contact.name).size(20)]
+                    .spacing(5)
+                    .align_y(Alignment::Center),
+                widget::text!("Type: {:?}", jid.server())
+                    .size(14)
+                    .style(tsubtitle),
                 widget::text(jid.number()).size(14).style(tsubtitle),
+                "More info (like profile pictures) coming in future..." // TODO
             ]
-            .spacing(10)
-            .padding(16),
+            .spacing(10),
         )
-        .style(|t: &Theme| t.style_container_sharp_box(1.0, Color::SecondDark))
-        .into()
     }
 }
