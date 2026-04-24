@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::{
     core::IntoStringError,
     storage::{
-        message::{MsgData, ReactionData},
         Time,
+        message::{MsgData, ReactionData},
     },
 };
 
@@ -61,7 +61,7 @@ async fn load_replies(
     let mut query = "SELECT * FROM messages WHERE msg_id IN ".to_owned();
     query_append_list(&mut query, replies_to_load.len());
     let mut q = sqlx::query_as::<_, MsgData>(&query);
-    for (id, _) in &replies_to_load {
+    for id in replies_to_load.keys() {
         q = q.bind(id);
     }
     let loaded_replies = q.fetch_all(db).await.strerr()?;

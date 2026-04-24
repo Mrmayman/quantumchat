@@ -3,9 +3,8 @@ use sqlx::FromRow;
 use whatsmeow_nchat::Jid;
 
 use crate::{
-    jid,
+    IntoStringError, Message, jid,
     storage::{Data, LidMapping, Time},
-    IntoStringError, Message,
 };
 
 #[derive(FromRow, Clone)]
@@ -77,19 +76,15 @@ impl Data {
         Ok(t)
     }
 
-    pub fn operate_on_contact<F>(
-        &mut self,
-        jid: &Jid,
-        operation: F,
-    ) -> Result<Task<Message>, String>
+    pub fn operate_on_contact<F>(&mut self, jid: &Jid, operation: F) -> Task<Message>
     where
         F: FnOnce(&mut Contact, &sqlx::Pool<sqlx::Sqlite>),
     {
         if let Some(contact) = self.contacts.get_mut(jid) {
             operation(contact, &self.db);
-            return Ok(Task::none());
+            return Task::none();
         } else if jid.server().to_string() == "lid" {
-            return Ok(Task::none());
+            return Task::none();
         }
 
         // Create new fallback contact if it doesn't exist
@@ -108,9 +103,8 @@ impl Data {
         operation(&mut contact, &self.db);
 
         let task = self.db_update_contact(contact.clone());
-
         self.contacts.insert(jid.clone(), contact);
-        Ok(task)
+        task
     }
 
     fn db_update_contact(&mut self, contact: Contact) -> Task<Message> {
@@ -118,7 +112,7 @@ impl Data {
 
         let fut = async move {
             let lmt = contact.last_message_time.0 as i64;
-            let lrmt = contact.last_read_message_time.0 as i64;
+            let lmt_read = contact.last_read_message_time.0 as i64;
             sqlx::query!(
                 r"INSERT OR REPLACE INTO contacts (
                     jid, name,
@@ -132,7 +126,7 @@ impl Data {
                 contact.is_group,
                 contact.is_incomplete,
                 lmt,
-                lrmt,
+                lmt_read,
             )
             .execute(&db)
             .await

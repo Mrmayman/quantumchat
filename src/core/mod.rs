@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use tokio::sync::{Mutex, mpsc::UnboundedReceiver};
-use whatsmeow_nchat::{ConnId, Jid};
+use whatsmeow_nchat::{ConnId, Jid, MsgId};
 
 use crate::{
     Res, state::State, storage::Data, stylesheet::styles::Theme, view::chat_buffer::DbLoadResult,
@@ -29,6 +29,7 @@ pub enum Message {
     ChatScrolledView(iced::widget::scrollable::Viewport),
     ChatMessageInput(String),
     ChatSend,
+    ChatScrollToReply(MsgId),
 
     ChatBufferLoaded(Res<DbLoadResult>),
     ChatBufferShrink(usize, bool),
@@ -41,7 +42,7 @@ pub struct App {
     pub db: Data,
     pub message_drafts: HashMap<Jid, String>,
     pub typing: HashMap<Jid, Jid>,
-
+    pub animations: AppAnimation,
     pub tick_timer: u128,
 }
 
@@ -68,4 +69,24 @@ macro_rules! jid {
             )
         })?
     };
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AppAnimation {
+    pub reply_message: Option<(MsgId, std::time::Instant)>,
+}
+
+impl AppAnimation {
+    pub fn new_reply(&mut self, msg_id: MsgId) {
+        self.reply_message = Some((msg_id, std::time::Instant::now()));
+    }
+
+    pub fn tick(&mut self) {
+        const REPLY_DURATION_MS: u128 = 300;
+        if let Some((_, start)) = self.reply_message.as_mut()
+            && std::time::Instant::now().duration_since(*start).as_millis() > REPLY_DURATION_MS
+        {
+            self.reply_message = None;
+        }
+    }
 }

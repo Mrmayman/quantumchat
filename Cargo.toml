@@ -18,7 +18,7 @@ iced = { version = "0.14", default-features = false, features = [
     # "image",
     # "svg",
     # "lazy",
-    # "advanced",
+    "advanced",
     "qr_code",
 
     # Rendering/Backend
@@ -26,6 +26,7 @@ iced = { version = "0.14", default-features = false, features = [
     "tiny-skia",
     "x11",
     "wayland",
+    "selector",
     # Appearance
     # "crisp",
     "web-colors",
@@ -43,6 +44,9 @@ sqlx = { version = "0.8.*", default-features = false, features = [
 ]}
 dirs = "6"
 sipper = "0.1"
+
+[profile.dev]
+opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3

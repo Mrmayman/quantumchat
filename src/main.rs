@@ -24,9 +24,9 @@ use iced::Task;
 use whatsmeow_nchat::{AccountState, ConnId};
 
 use crate::{
-    core::{App, IntoStringError, Message},
+    core::{App, AppAnimation, IntoStringError, Message},
     state::{ChatUI, MenuChats, MenuLogin, State},
-    storage::{Data, DIR},
+    storage::{DIR, Data},
     stylesheet::styles::{Theme, ThemeColor, ThemeMode},
     view::chat_buffer::ChatBuffer,
 };
@@ -34,6 +34,7 @@ use crate::{
 mod core;
 mod events;
 mod icons;
+mod logic;
 mod state;
 mod storage;
 #[allow(unused)]
@@ -66,6 +67,7 @@ impl App {
                 db,
                 typing: HashMap::new(),
                 tick_timer: 0,
+                animations: AppAnimation::default(),
             },
             Task::perform(
                 spawn_blocking(|| {
@@ -73,7 +75,7 @@ impl App {
                         .strerr()
                         .map(|(a, b)| (a, Arc::new(Mutex::new(b))))
                 }),
-                |n| Message::Connected(n.strerr().flatten()),
+                |n| Message::Connected(n.strerr().and_then(|n| n)),
             ),
         )
     }
@@ -97,7 +99,7 @@ impl App {
                 } else {
                     Task::perform(
                         spawn_blocking(move || whatsmeow_nchat::fetch_contacts(id).strerr()),
-                        |n| Message::Done(n.strerr().flatten()),
+                        |n| Message::Done(n.strerr().and_then(|n| n)),
                     )
                 };
 
@@ -116,17 +118,17 @@ impl App {
             }
             Message::Done(r) => r?,
             Message::CoreTick => self.tick(),
-            Message::CoreEvent(_event, _status) => {
-                if let iced::Event::Window(iced::window::Event::CloseRequested) = _event {
+            Message::CoreEvent(event, _status) => {
+                if let iced::Event::Window(iced::window::Event::CloseRequested) = event {
                     whatsmeow_nchat::cleanup(self.id).unwrap();
                     std::process::exit(0);
                 }
             }
             Message::SidebarResize(ratio) => {
-                if let State::Chats(menu, _) = &mut self.state {
-                    if let Some(split) = menu.sidebar_split {
-                        menu.sidebar_grid_state.resize(split, ratio);
-                    }
+                if let State::Chats(menu, _) = &mut self.state
+                    && let Some(split) = menu.sidebar_split
+                {
+                    menu.sidebar_grid_state.resize(split, ratio);
                 }
             }
             Message::ChatSelected(chat_id) => {
@@ -144,10 +146,10 @@ impl App {
             }
             Message::WEvent(event) => return self.handle_event(event),
             Message::ChatScrollLazyLoad(reverse) => {
-                if let State::Chats(_, Some(chat)) = &mut self.state {
-                    if !chat.chat_buffer.debounce(reverse) {
-                        return chat.chat_buffer.load_begin(&self.db, reverse);
-                    }
+                if let State::Chats(_, Some(chat)) = &mut self.state
+                    && !chat.chat_buffer.debounce(reverse)
+                {
+                    return Ok(chat.chat_buffer.load_begin(&self.db, reverse));
                 }
             }
             Message::ChatScrolledView(v) => {
@@ -183,7 +185,7 @@ impl App {
                             )
                             .strerr()
                         }),
-                        |n| Message::Done(n.strerr().flatten()),
+                        |n| Message::Done(n.strerr().and_then(|n| n)),
                     ));
                 }
             }
@@ -240,11 +242,14 @@ impl App {
                     });
                 }
             }
+            Message::ChatScrollToReply(msg_id) => return Ok(self.scroll_to_reply(msg_id)),
         }
         Ok(Task::none())
     }
 
     fn tick(&mut self) {
+        self.animations.tick();
+
         if self.tick_timer.is_multiple_of(5) && self.db.contacts_sort_free {
             self.db.sort_contacts();
             self.db.contacts_sort_free = false;
@@ -268,7 +273,7 @@ impl App {
     }
 
     fn go_to_login(&mut self, code: String, is_qr: bool) {
-        self.state = match MenuLogin::new(code.clone(), is_qr) {
+        self.state = match MenuLogin::new(code, is_qr) {
             Ok(menu) => State::Login(menu),
             Err(err) => State::Error(format!("While generating login QR:\n{err}")),
         };

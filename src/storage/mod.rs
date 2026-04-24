@@ -20,7 +20,7 @@ pub static DIR: LazyLock<PathBuf> = LazyLock::new(|| {
 
 pub struct Data {
     pub db: sqlx::SqlitePool,
-    pub runtime: tokio::runtime::Runtime,
+    pub _runtime: tokio::runtime::Runtime,
 
     pub contacts: HashMap<Jid, Contact>,
     pub contacts_lid: HashMap<Jid, LidMapping>,
@@ -92,7 +92,7 @@ impl Data {
             contacts_lid,
             config,
             order,
-            runtime,
+            _runtime: runtime,
             latest_timestamp: Time(
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -121,7 +121,7 @@ impl Data {
                 return &contact.name;
             }
         }
-        self.contacts.get(&jid).map_or(jid.number(), |n| &n.name)
+        self.contacts.get(jid).map_or(jid.number(), |n| &n.name)
     }
 }
 

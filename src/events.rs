@@ -38,31 +38,7 @@ impl App {
                 is_group,
                 notify: _,
             } => {
-                let jid = if phone.is_empty() {
-                    id.clone()
-                } else {
-                    Jid::from_phone_no(phone)
-                };
-                if is_self {
-                    self.db.config.self_jid = Some(jid.clone());
-                    self.db.config_autosave_free = true;
-                }
-
-                let should_add = self.db.contacts.get(&jid).is_none_or(|n| n.is_incomplete);
-                if should_add {
-                    return self.db.add_contact(Contact {
-                        name,
-                        jid: jid.to_id(),
-                        muted: false,
-                        is_group,
-                        chatted: false,
-                        last_message_time: Time(0),
-                        last_read_message_time: Time(0),
-                        is_incomplete: false,
-                        last_msg_contents: None,
-                        last_msg_sender: None,
-                    });
-                }
+                return self.e_new_contact(&id, name, phone, is_self, is_group);
             }
             ChatEvent::NewChatsNotify {
                 is_unread,
@@ -85,12 +61,16 @@ impl App {
                 text,
                 from_me,
                 quoted_id,
-                file_id_path: _,
+                file_id_path,
                 file_status: _,
                 time_sent,
                 is_read,
                 is_edited,
             } => {
+                if let Some(file_id_path) = file_id_path {
+                    println!("FILE MSG {file_id_path:?}");
+                }
+                // whatsmeow_nchat::download_file(id, chat_id, msg, file_id, action)
                 let should_update_window = self.should_update_chatbuf(&id);
 
                 let t1 = self.db.add_message(MsgData {
@@ -105,11 +85,9 @@ impl App {
                     from_me,
                 })?;
 
-                if should_update_window {
-                    if let State::Chats(_, Some(ui)) = &mut self.state {
-                        let t2 = ui.chat_buffer.load_begin(&self.db, false)?;
-                        return Ok(Task::batch([t1, t2]));
-                    }
+                if should_update_window && let State::Chats(_, Some(ui)) = &mut self.state {
+                    let t2 = ui.chat_buffer.load_begin(&self.db, false);
+                    return Ok(Task::batch([t1, t2]));
                 }
                 return Ok(t1);
             }
@@ -125,13 +103,13 @@ impl App {
                     sender_id.to_id(),
                     emoji.clone(),
                     from_me,
-                )?;
+                );
 
-                if let State::Chats(_, Some(chat)) = &mut self.state {
-                    if chat.selected == id {
-                        chat.chat_buffer
-                            .add_reaction(&self.db, &msg_id, emoji, sender_id, from_me);
-                    }
+                if let State::Chats(_, Some(chat)) = &mut self.state
+                    && chat.selected == id
+                {
+                    chat.chat_buffer
+                        .add_reaction(&self.db, &msg_id, emoji, sender_id, from_me);
                 }
             }
             ChatEvent::NewTypingNotify { user_id, is_typing } => {
@@ -150,6 +128,43 @@ impl App {
             }
         }
         Ok(Task::none())
+    }
+
+    fn e_new_contact(
+        &mut self,
+        id: &Jid,
+        name: String,
+        phone: String,
+        is_self: bool,
+        is_group: bool,
+    ) -> Result<Task<Message>, String> {
+        let jid = if phone.is_empty() {
+            id.clone()
+        } else {
+            Jid::from_phone_no(phone)
+        };
+        if is_self {
+            self.db.config.self_jid = Some(jid.clone());
+            self.db.config_autosave_free = true;
+        }
+        let should_add = self.db.contacts.get(&jid).is_none_or(|n| n.is_incomplete);
+
+        if should_add {
+            self.db.add_contact(Contact {
+                name,
+                jid: jid.to_id(),
+                muted: false,
+                is_group,
+                chatted: false,
+                last_message_time: Time(0),
+                last_read_message_time: Time(0),
+                is_incomplete: false,
+                last_msg_contents: None,
+                last_msg_sender: None,
+            })
+        } else {
+            Ok(Task::none())
+        }
     }
 
     fn should_update_chatbuf(&mut self, id: &Jid) -> bool {
@@ -210,7 +225,7 @@ impl App {
                     .await;
                 });
             }
-        })?;
+        });
 
         self.db.sort_contacts();
         self.db.add_pin(id.clone(), is_pinned);
@@ -226,7 +241,7 @@ impl App {
                 whatsmeow_nchat::login(id).strerr()?;
                 Ok::<(), String>(())
             }),
-            |n| Message::Done(n.strerr().flatten()),
+            |n| Message::Done(n.strerr().and_then(|n| n)),
         ))
     }
 }

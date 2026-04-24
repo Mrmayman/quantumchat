@@ -1,13 +1,12 @@
 use std::collections::VecDeque;
 
-use iced::{widget::scrollable::Viewport, Task};
+use iced::{Task, widget::scrollable::Viewport};
 use whatsmeow_nchat::{Jid, MsgId};
 
 use crate::{
-    jid,
+    Message, jid,
     storage::{Data, Time},
     view::chat_buffer::db_load::load_chats_from_db,
-    Message,
 };
 
 mod db_load;
@@ -49,7 +48,7 @@ impl ChatBuffer {
             debounce_down: true,
             scroll: unsafe { std::mem::zeroed() }, // hear me out, I had no choice
         };
-        let task = t.load_begin(db, false)?.chain(t.load_begin(db, true)?);
+        let task = t.load_begin(db, false).chain(t.load_begin(db, true));
         Ok((t, task))
     }
 
@@ -68,15 +67,15 @@ impl ChatBuffer {
         false
     }
 
-    pub fn load_begin(&mut self, db: &Data, reverse: bool) -> Result<Task<Message>, String> {
+    pub fn load_begin(&mut self, db: &Data, reverse: bool) -> Task<Message> {
         let timestamp = if reverse { self.start_ts } else { self.end_ts };
         let viewing = self.viewing_id.clone();
         let db = db.db.clone();
 
-        Ok(Task::perform(
+        Task::perform(
             async move { load_chats_from_db(reverse, timestamp, viewing, db).await },
             Message::ChatBufferLoaded,
-        ))
+        )
     }
 
     pub fn loaded(&mut self, db: &Data, mut r: DbLoadResult) -> Result<(), String> {
@@ -97,6 +96,7 @@ impl ChatBuffer {
                     // TODO: collapse name for multiple messages in a row
                     sender_name: db.display_jid(&jid!(message.sender)).to_owned(),
                     sender: jid!(message.sender),
+                    id: MsgId(message.msg_id.clone()),
                 },
                 replying_to: r
                     .replies
@@ -106,6 +106,7 @@ impl ChatBuffer {
                         text: reply.content,
                         sender_name: db.display_jid(&sender).to_owned(),
                         sender,
+                        id: MsgId(reply.msg_id),
                     }),
                 time_display: message.timestamp.to_string(),
                 timestamp: message.timestamp,
@@ -124,7 +125,6 @@ impl ChatBuffer {
                         from_me: rn.from_me,
                     })
                     .collect(),
-                id: MsgId(message.msg_id),
                 hide_sender: false,
             };
             if r.is_reverse {
@@ -163,15 +163,15 @@ impl ChatBuffer {
         }
         if reverse {
             // We loaded from front (up), so removing from end
-            if let Some(last) = self.messages.back() {
-                if self.end_ts > last.timestamp {
-                    self.end_ts = last.timestamp;
-                }
+            if let Some(last) = self.messages.back()
+                && self.end_ts > last.timestamp
+            {
+                self.end_ts = last.timestamp;
             }
-        } else if let Some(first) = self.messages.front() {
-            if self.start_ts < first.timestamp {
-                self.start_ts = first.timestamp;
-            }
+        } else if let Some(first) = self.messages.front()
+            && self.start_ts < first.timestamp
+        {
+            self.start_ts = first.timestamp;
         }
     }
 
@@ -183,7 +183,7 @@ impl ChatBuffer {
         sender: Jid,
         from_me: bool,
     ) {
-        let Some(msg) = self.messages.iter_mut().find(|m| &m.id == msg_id) else {
+        let Some(msg) = self.messages.iter_mut().find(|m| &m.message.id == msg_id) else {
             return;
         };
         msg.reactions.push(RenderedReaction {
@@ -196,7 +196,6 @@ impl ChatBuffer {
 }
 
 pub struct RenderedMessage {
-    pub id: MsgId,
     pub message: RMessageCore,
     pub replying_to: Option<RMessageCore>,
     pub reactions: Vec<RenderedReaction>,
@@ -218,6 +217,7 @@ pub struct RenderedReaction {
 
 pub struct RMessageCore {
     pub text: String,
+    pub id: MsgId,
     pub sender: Jid,
     pub sender_name: String,
 }

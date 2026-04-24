@@ -30,6 +30,8 @@ impl MenuLogin {
 pub struct MenuChats {
     pub sidebar_grid_state: pane_grid::State<bool>,
     pub sidebar_split: Option<pane_grid::Split>,
+
+    pub opened_profile: Option<Jid>,
 }
 
 impl MenuChats {
@@ -47,6 +49,7 @@ impl MenuChats {
         Self {
             sidebar_grid_state,
             sidebar_split,
+            opened_profile: None,
         }
     }
 }

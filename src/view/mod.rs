@@ -1,13 +1,13 @@
 use iced::{
-    widget::{self, column, row},
     Length,
+    widget::{self, column, row},
 };
 
 use crate::{
+    App, Element, FONT_MONO, Message,
     state::{MenuLogin, State},
     stylesheet::color::Color,
     view::components::{center, sbox},
-    App, Element, Message, FONT_MONO,
 };
 
 mod chat;
@@ -60,6 +60,7 @@ impl MenuLogin {
                     } else {
                         "4. Tap \"Link with phone number instead\" and enter this code on your phone"
                     }).size(12),
+                    widget::button(widget::text("View Existing Data...").size(14)).on_press(Message::OpenMainMenu)
                 ]
                 .spacing(2),
                 code

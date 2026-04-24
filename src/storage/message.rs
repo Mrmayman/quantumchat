@@ -75,11 +75,11 @@ impl Data {
         sender_id: String,
         emoji: String,
         from_me: bool,
-    ) -> Result<(), String> {
+    ) {
         let db = self.db.clone();
         tokio::spawn(async move {
             let _: Result<_, _> = sqlx::query!(
-                r"INSERT INTO reactions (
+                r"INSERT OR REPLACE INTO reactions (
                     chat_id, message_id, sender_id, emoji, from_me
                 ) VALUES (?, ?, ?, ?, ?)",
                 chat_id,
@@ -91,11 +91,10 @@ impl Data {
             .execute(&db)
             .await;
         });
-        Ok(())
     }
 
     fn update_last_message(&mut self, msg: &MsgData, time: Time) -> Result<Task<Message>, String> {
-        let t_contact = self.operate_on_contact(&jid!(msg.source), |n, db| {
+        Ok(self.operate_on_contact(&jid!(msg.source), |n, db| {
             if n.last_message_time < time {
                 n.last_message_time = time;
 
@@ -149,7 +148,6 @@ impl Data {
                     .await;
                 });
             }
-        })?;
-        Ok(t_contact)
+        }))
     }
 }
