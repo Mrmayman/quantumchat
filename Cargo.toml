@@ -18,7 +18,7 @@ iced = { version = "0.14", default-features = false, features = [
     # "image",
     # "svg",
     # "lazy",
-    "advanced",
+    # "advanced",
     "qr_code",
 
     # Rendering/Backend

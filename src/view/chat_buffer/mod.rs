@@ -215,6 +215,7 @@ pub struct RenderedReaction {
     pub from_me: bool,
 }
 
+#[derive(Clone, Debug)]
 pub struct RMessageCore {
     pub text: String,
     pub id: MsgId,

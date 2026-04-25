@@ -24,7 +24,7 @@ use iced::Task;
 use whatsmeow_nchat::{AccountState, ConnId};
 
 use crate::{
-    core::{App, AppAnimation, IntoStringError, Message},
+    core::{App, IntoStringError, Message},
     state::{ChatUI, MenuChats, MenuLogin, State},
     storage::{DIR, Data},
     stylesheet::styles::{Theme, ThemeColor, ThemeMode},
@@ -66,8 +66,6 @@ impl App {
                 state: State::Chats(MenuChats::new(), None),
                 db,
                 typing: HashMap::new(),
-                tick_timer: 0,
-                animations: AppAnimation::default(),
             },
             Task::perform(
                 spawn_blocking(|| {
@@ -117,7 +115,7 @@ impl App {
                 return Ok(Task::batch([event_t, login_t]));
             }
             Message::Done(r) => r?,
-            Message::CoreTick => self.tick(),
+            Message::CoreTick => return Ok(self.tick()),
             Message::CoreEvent(event, _status) => {
                 if let iced::Event::Window(iced::window::Event::CloseRequested) = event {
                     whatsmeow_nchat::cleanup(self.id).unwrap();
@@ -137,6 +135,8 @@ impl App {
                     *ui = Some(ChatUI {
                         selected: chat_id,
                         chat_buffer,
+                        msg_hover: None,
+                        animation_jump: None,
                     });
                     return Ok(Task::batch([
                         task,
@@ -159,7 +159,11 @@ impl App {
             }
             Message::ChatMessageInput(msg) => {
                 if let State::Chats(_, Some(chat)) = &mut self.state {
-                    self.message_drafts.insert(chat.selected.clone(), msg);
+                    let draft = self
+                        .message_drafts
+                        .entry(chat.selected.clone())
+                        .or_default();
+                    draft.text = msg;
                 }
             }
             Message::ChatSend => {
@@ -168,18 +172,23 @@ impl App {
                     let Some(contents) = self.message_drafts.remove(&chat_id) else {
                         return Ok(Task::none());
                     };
-                    if contents.is_empty() {
+                    if contents.text.is_empty() {
                         return Ok(Task::none());
                     }
                     let id = self.id;
 
                     return Ok(Task::perform(
                         spawn_blocking(move || {
+                            let reply = contents.reply_to.map(|n| whatsmeow_nchat::QuotedMessage {
+                                sender: n.sender,
+                                contents: n.text,
+                                message_id: n.id,
+                            });
                             whatsmeow_nchat::send_message(
                                 id,
                                 &chat_id,
-                                &contents,
-                                None,
+                                &contents.text,
+                                reply.as_ref(),
                                 None::<(&std::path::Path, _)>,
                                 None,
                             )
@@ -242,20 +251,52 @@ impl App {
                     });
                 }
             }
+
             Message::ChatScrollToReply(msg_id) => return Ok(self.scroll_to_reply(msg_id)),
+            Message::ChatScrollToReplyFound(offset) => self.scroll_to_reply_done(offset),
+
             Message::ChatOpenProfile(jid) => {
                 if let State::Chats(menu, _) = &mut self.state {
                     menu.opened_profile = jid;
+                }
+            }
+            Message::ChatMsgHover(msg_id, entered) => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    if entered {
+                        chat.msg_hover = Some(msg_id);
+                    } else if let Some(id) = &chat.msg_hover
+                        && *id == msg_id
+                    {
+                        chat.msg_hover = None;
+                    }
+                }
+            }
+            Message::ChatReplyTo(msg_id) => {
+                if let State::Chats(_, Some(chat)) = &mut self.state {
+                    let draft = self
+                        .message_drafts
+                        .entry(chat.selected.clone())
+                        .or_default();
+                    draft.reply_to = msg_id;
                 }
             }
         }
         Ok(Task::none())
     }
 
-    fn tick(&mut self) {
-        self.animations.tick();
+    fn tick(&mut self) -> Task<Message> {
+        let mut task = Task::none();
+        if let State::Chats(_, Some(chat)) = &mut self.state
+            && let Some(animation) = &mut chat.animation_jump
+        {
+            let (t, finished) = animation.tick(chat.chat_buffer.scroll);
+            if finished {
+                chat.animation_jump = None;
+            }
+            task = t;
+        }
 
-        if self.tick_timer.is_multiple_of(5) && self.db.contacts_sort_free {
+        if self.db.contacts_sort_free {
             self.db.sort_contacts();
             self.db.contacts_sort_free = false;
         }
@@ -269,7 +310,7 @@ impl App {
             self.db.config_autosave_free = false;
         }
 
-        self.tick_timer = self.tick_timer.wrapping_add(1);
+        task
     }
 
     fn set_error(&mut self, err: String) {
@@ -284,13 +325,27 @@ impl App {
         };
     }
 
-    #[allow(clippy::unused_self)]
     fn subscription(&self) -> iced::Subscription<Message> {
         let tick = iced::time::every(std::time::Duration::from_millis(1000 / 5))
             .map(|_| Message::CoreTick);
         let events = iced::event::listen_with(|a, b, _| Some(Message::CoreEvent(a, b)));
 
-        iced::Subscription::batch(vec![tick, events])
+        let smooth_animation = if self.is_animating() {
+            iced::window::frames().map(|_| Message::CoreTick)
+        } else {
+            iced::Subscription::none()
+        };
+
+        iced::Subscription::batch(vec![tick, events, smooth_animation])
+    }
+
+    #[must_use]
+    fn is_animating(&self) -> bool {
+        if let State::Chats(_, Some(ui)) = &self.state {
+            ui.animation_jump.is_some()
+        } else {
+            false
+        }
     }
 
     fn theme(&self) -> Theme {

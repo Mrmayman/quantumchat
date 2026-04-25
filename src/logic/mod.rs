@@ -1,17 +1,42 @@
 use iced::{
     Task,
-    advanced::graphics::futures::MaybeSend,
     widget::{self, operation, selector},
 };
 use whatsmeow_nchat::MsgId;
 
-use crate::core::{App, Message};
+use crate::{
+    core::{App, Message},
+    state::{ChatJumpAnimation, State},
+};
 
 impl App {
     pub(super) fn scroll_to_reply(&mut self, msg_id: MsgId) -> Task<Message> {
         let widget_id = format!("msg:{}", msg_id.0);
-        self.animations.new_reply(msg_id);
+        if let State::Chats(_, Some(ui)) = &mut self.state {
+            ui.animation_jump = Some(ChatJumpAnimation::new(msg_id));
+        }
         scroll_into_view("messages", widget_id)
+    }
+
+    pub(super) fn scroll_to_reply_done(
+        &mut self,
+        offset: iced::widget::operation::AbsoluteOffset<Option<f32>>,
+    ) {
+        if let State::Chats(_, Some(chat)) = &mut self.state
+            && let Some(anim) = &mut chat.animation_jump
+        {
+            let viewport = chat.chat_buffer.scroll;
+            let viewport_height = viewport.bounds().height - 60.0;
+            if offset.y.is_some_and(|y| {
+                let delta = y - viewport.absolute_offset().y;
+                delta > 0.0 && delta < viewport_height
+            }) {
+                // Skip if already on screen
+                return;
+            }
+
+            anim.offset = Some(offset);
+        }
     }
 }
 
@@ -20,10 +45,10 @@ impl App {
 //
 // Copyright (C) 2026 edwloef
 // Licensed under the GNU General Public License v3.0
-pub fn scroll_into_view<T: MaybeSend + 'static>(
+pub fn scroll_into_view(
     scrollable: impl Into<widget::Id>,
     child: impl Into<widget::Id>,
-) -> Task<T> {
+) -> Task<Message> {
     let scrollable = scrollable.into();
     let child = child.into();
 
@@ -48,15 +73,14 @@ pub fn scroll_into_view<T: MaybeSend + 'static>(
                 y: c.visible_bounds()
                     .is_none_or(|vb| vb.height != c.bounds().height)
                     .then_some(
-                        c.bounds().y - s.bounds().y
-                            + if c.bounds().y - s.bounds().y < translation.y {
-                                0.0
-                            } else {
-                                c.bounds().height - s.bounds().height
-                            },
+                        c.bounds().y - s.bounds().y, // + if c.bounds().y - s.bounds().y < translation.y {
+                                                     // 0.0
+                                                     // } else {
+                                                     // c.bounds().height - s.bounds().height
+                                                     // },
                     ),
             };
 
-            operation::scroll_to(scrollable.clone(), offset)
+            Task::done(Message::ChatScrollToReplyFound(offset))
         })
 }

@@ -1,10 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
 
+use iced::widget::operation::AbsoluteOffset;
 use tokio::sync::{Mutex, mpsc::UnboundedReceiver};
 use whatsmeow_nchat::{ConnId, Jid, MsgId};
 
 use crate::{
-    Res, state::State, storage::Data, stylesheet::styles::Theme, view::chat_buffer::DbLoadResult,
+    Res,
+    state::State,
+    storage::Data,
+    stylesheet::styles::Theme,
+    view::chat_buffer::{DbLoadResult, RMessageCore},
 };
 
 type Recv = Arc<Mutex<UnboundedReceiver<whatsmeow_nchat::Event>>>;
@@ -30,10 +35,14 @@ pub enum Message {
     ChatMessageInput(String),
     ChatSend,
     ChatScrollToReply(MsgId),
+    ChatScrollToReplyFound(AbsoluteOffset<Option<f32>>),
 
     ChatBufferLoaded(Res<DbLoadResult>),
     ChatBufferShrink(usize, bool),
 
+    /// Hovered mouse on a message (entered if `true`, exited if `false`)
+    ChatMsgHover(MsgId, bool),
+    ChatReplyTo(Option<RMessageCore>),
     ChatOpenProfile(Option<Jid>),
 }
 
@@ -42,10 +51,14 @@ pub struct App {
     pub theme: Theme,
     pub state: State,
     pub db: Data,
-    pub message_drafts: HashMap<Jid, String>,
+    pub message_drafts: HashMap<Jid, MsgDraft>,
     pub typing: HashMap<Jid, Jid>,
-    pub animations: AppAnimation,
-    pub tick_timer: u128,
+}
+
+#[derive(Default)]
+pub struct MsgDraft {
+    pub text: String,
+    pub reply_to: Option<RMessageCore>,
 }
 
 pub trait IntoStringError<T> {
@@ -71,24 +84,4 @@ macro_rules! jid {
             )
         })?
     };
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct AppAnimation {
-    pub reply_message: Option<(MsgId, std::time::Instant)>,
-}
-
-impl AppAnimation {
-    pub fn new_reply(&mut self, msg_id: MsgId) {
-        self.reply_message = Some((msg_id, std::time::Instant::now()));
-    }
-
-    pub fn tick(&mut self) {
-        const REPLY_DURATION_MS: u128 = 300;
-        if let Some((_, start)) = self.reply_message.as_mut()
-            && std::time::Instant::now().duration_since(*start).as_millis() > REPLY_DURATION_MS
-        {
-            self.reply_message = None;
-        }
-    }
 }

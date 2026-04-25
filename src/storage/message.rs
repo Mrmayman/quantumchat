@@ -27,6 +27,7 @@ pub struct MsgData {
 #[derive(Debug, Clone, FromRow)]
 pub struct ReactionData {
     pub message_id: String,
+    #[allow(unused)] // storing just in case it's needed in the future
     pub chat_id: String,
     pub sender_id: String,
     pub emoji: String,

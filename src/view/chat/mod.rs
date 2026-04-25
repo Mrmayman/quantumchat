@@ -1,8 +1,15 @@
 use crate::{
     App, Element, Message, icons,
     state::{ChatUI, MenuChats},
-    stylesheet::{color::Color, styles::Theme, widgets::StyleButton},
-    view::components::{button_with_icon, sbox, tsubtitle, underline_maybe},
+    stylesheet::{
+        color::Color,
+        styles::{BORDER_RADIUS, Theme},
+        widgets::StyleButton,
+    },
+    view::{
+        chat::msg::sender_link,
+        components::{button_with_icon, sbox, tsubtitle, underline_maybe},
+    },
 };
 
 use iced::{
@@ -62,19 +69,15 @@ impl App {
                     .key(ui.chat_buffer.end_ts)
             });
 
-        let current_msg = self
-            .message_drafts
-            .get(&ui.selected)
-            .map(String::as_str)
+        let current_msg = self.message_drafts.get(&ui.selected);
+        let current_msg_txt = current_msg
+            .as_ref()
+            .map(|m| m.text.as_str())
             .unwrap_or_default();
 
         widget::container(widget::column![
             sbox(
-                msg::sender_link(
-                    self.db.display_jid(&ui.selected).to_owned(),
-                    ui.selected.clone()
-                )
-                .size(20),
+                msg::sender_link(self.db.display_jid(&ui.selected), ui.selected.clone()).size(20),
                 Color::Dark
             )
             .width(Length::Fill)
@@ -83,7 +86,12 @@ impl App {
             widget::scrollable(
                 widget::Column::new()
                     .push(sensor_up)
-                    .extend(ui.chat_buffer.messages.iter().map(|n| self.view_msg(n)))
+                    .extend(
+                        ui.chat_buffer
+                            .messages
+                            .iter()
+                            .map(|n| Self::view_msg(ui, n))
+                    )
                     .push(sensor_down)
                     .spacing(2)
                     .padding(10)
@@ -96,14 +104,18 @@ impl App {
             .on_scroll(Message::ChatScrolledView),
             widget::rule::horizontal(1),
             sbox(
-                widget::row![
-                    button_with_icon(icons::new_s(13), "", 13),
-                    widget::text_input("Enter message...", current_msg)
-                        .on_input(Message::ChatMessageInput)
-                        .on_submit(Message::ChatSend),
-                    button_with_icon(icons::checkmark_s(13), "Send", 13).on_press_maybe(
-                        (!current_msg.trim().is_empty()).then_some(Message::ChatSend)
-                    )
+                column![
+                    replying_to(current_msg),
+                    row![
+                        button_with_icon(icons::new_s(13), "", 13),
+                        widget::text_input("Enter message...", current_msg_txt)
+                            .on_input(Message::ChatMessageInput)
+                            .on_submit(Message::ChatSend),
+                        button_with_icon(icons::checkmark_s(13), "Send", 13).on_press_maybe(
+                            (!current_msg_txt.trim().is_empty()).then_some(Message::ChatSend)
+                        )
+                    ]
+                    .spacing(5)
                 ]
                 .spacing(5),
                 Color::Dark
@@ -226,9 +238,7 @@ impl App {
                 .padding(16)
         }
 
-        let close_btn = widget::button(icons::close_s(14))
-            .padding(8)
-            .on_press(Message::ChatOpenProfile(None));
+        let close_btn = close_btn().on_press(Message::ChatOpenProfile(None));
 
         let contact = if let Some(lid) = self.db.contacts_lid.get(jid) {
             if lid.is_censored {
@@ -262,7 +272,7 @@ impl App {
         viewbox(
             column![
                 row![close_btn, widget::text(&contact.name).size(20)]
-                    .spacing(5)
+                    .spacing(10)
                     .align_y(Alignment::Center),
                 widget::text!("Type: {:?}", jid.server())
                     .size(14)
@@ -273,4 +283,33 @@ impl App {
             .spacing(10),
         )
     }
+}
+
+fn close_btn() -> widget::Button<'static, Message, Theme> {
+    widget::button(icons::close_s(14)).padding(8)
+}
+
+fn replying_to(
+    current_msg: Option<&crate::core::MsgDraft>,
+) -> Option<widget::Row<'_, Message, Theme>> {
+    let n = current_msg?.reply_to.as_ref()?;
+    Some(
+        row![
+            close_btn().on_press(Message::ChatReplyTo(None)),
+            widget::container(
+                column![
+                    sender_link(&n.sender_name, n.sender.clone()),
+                    widget::text(&n.text).shaping(Shaping::Advanced),
+                ]
+                .padding([5, 10]),
+            )
+            .style(|t: &Theme| t.style_container_round_box(
+                1.0,
+                Color::SecondDark,
+                BORDER_RADIUS
+            )),
+        ]
+        .align_y(Alignment::Center)
+        .spacing(5),
+    )
 }
