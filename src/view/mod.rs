@@ -10,7 +10,7 @@ use crate::{
     view::components::{center, sbox},
 };
 
-mod chat;
+pub mod chat;
 pub mod chat_buffer;
 mod components;
 

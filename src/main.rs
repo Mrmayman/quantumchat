@@ -28,7 +28,7 @@ use crate::{
     state::{ChatUI, MenuChats, MenuLogin, State},
     storage::{DIR, Data},
     stylesheet::styles::{Theme, ThemeColor, ThemeMode},
-    view::chat_buffer::ChatBuffer,
+    view::{chat::ID_MESSAGES, chat_buffer::ChatBuffer},
 };
 
 mod core;
@@ -140,7 +140,7 @@ impl App {
                     });
                     return Ok(Task::batch([
                         task,
-                        iced::widget::operation::snap_to_end("messages"),
+                        iced::widget::operation::snap_to_end(ID_MESSAGES),
                     ]));
                 }
             }
@@ -200,9 +200,9 @@ impl App {
 
                     return Ok(if reverse {
                         let reverse_offset = viewport.absolute_offset_reversed();
-                        iced::widget::operation::snap_to_end("messages").chain(
+                        iced::widget::operation::snap_to_end(ID_MESSAGES).chain(
                             iced::widget::operation::scroll_by(
-                                "messages",
+                                ID_MESSAGES,
                                 iced::widget::operation::AbsoluteOffset {
                                     x: -reverse_offset.x,
                                     y: -reverse_offset.y,
@@ -210,7 +210,7 @@ impl App {
                             ),
                         )
                     } else {
-                        iced::widget::operation::scroll_to("messages", viewport.absolute_offset())
+                        iced::widget::operation::scroll_to(ID_MESSAGES, viewport.absolute_offset())
                     }
                     .chain(Task::perform(
                         async move {
@@ -227,12 +227,12 @@ impl App {
                     let viewport = chat.chat_buffer.scroll;
 
                     return Ok(if reverse {
-                        iced::widget::operation::scroll_to("messages", viewport.absolute_offset())
+                        iced::widget::operation::scroll_to(ID_MESSAGES, viewport.absolute_offset())
                     } else {
                         let reverse_offset = viewport.absolute_offset_reversed();
-                        iced::widget::operation::snap_to_end("messages").chain(
+                        iced::widget::operation::snap_to_end(ID_MESSAGES).chain(
                             iced::widget::operation::scroll_by(
-                                "messages",
+                                ID_MESSAGES,
                                 iced::widget::operation::AbsoluteOffset {
                                     x: -reverse_offset.x,
                                     y: -reverse_offset.y,

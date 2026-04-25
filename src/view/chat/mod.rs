@@ -13,6 +13,8 @@ use whatsmeow_nchat::Jid;
 
 mod msg;
 
+pub const ID_MESSAGES: &str = "messages";
+
 impl App {
     pub fn view_chats<'a>(&'a self, menu: &'a MenuChats, ui: Option<&'a ChatUI>) -> Element<'a> {
         widget::pane_grid(&menu.sidebar_grid_state, |_, is_sidebar, _| {
@@ -86,7 +88,7 @@ impl App {
                     .spacing(2)
                     .padding(10)
             )
-            .id("messages")
+            .id(ID_MESSAGES)
             // .anchor_bottom()
             .style(|t: &Theme, s| t.style_scrollable_flat_dark(s))
             .width(Length::Fill)
