@@ -1,5 +1,5 @@
 use crate::{
-    App, Element, Message, icons,
+    App, Element, FONT_MONO, Message, icons,
     state::{ChatUI, MenuChats},
     stylesheet::{
         color::Color,
@@ -9,6 +9,7 @@ use crate::{
     view::{
         chat::msg::sender_link,
         components::{button_with_icon, sbox, tsubtitle, underline_maybe},
+        rich_text::rich_text,
     },
 };
 
@@ -106,11 +107,30 @@ impl App {
             sbox(
                 column![
                     replying_to(current_msg),
+                    if current_msg_txt.trim().is_empty() {
+                        row![widget::rule::horizontal(1)]
+                    } else {
+                        row![
+                            widget::tooltip(
+                                widget::text("Preview:")
+                                    .font(FONT_MONO)
+                                    .style(tsubtitle)
+                                    .size(14),
+                                widget::text(
+                                    "Format your messages:\n*Bold* _Italic_ ~Strikethrough~ `Monospace`\n\nAlso preview emojis here if your system\ndoesn't display them in the text box."
+                                ).size(14),
+                                widget::tooltip::Position::Top,
+                            ).style(|t: &Theme| t.style_container_round_box(1.0, Color::ExtraDark, BORDER_RADIUS)),
+                            widget::rich_text(rich_text(current_msg_txt)),
+                        ]
+                        .spacing(10)
+                    },
                     row![
                         button_with_icon(icons::new_s(13), "", 13),
                         widget::text_input("Enter message...", current_msg_txt)
                             .on_input(Message::ChatMessageInput)
-                            .on_submit(Message::ChatSend),
+                            .on_submit(Message::ChatSend)
+                            .id("message_input"),
                         button_with_icon(icons::checkmark_s(13), "Send", 13).on_press_maybe(
                             (!current_msg_txt.trim().is_empty()).then_some(Message::ChatSend)
                         )
@@ -299,7 +319,7 @@ fn replying_to(
             widget::container(
                 column![
                     sender_link(&n.sender_name, n.sender.clone()),
-                    widget::text(&n.text).shaping(Shaping::Advanced),
+                    widget::rich_text(&n.text)
                 ]
                 .padding([5, 10]),
             )

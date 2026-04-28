@@ -1,0 +1,8 @@
+- JetBrains Mono font (monospace) taken from [JetBrains](https://www.jetbrains.com/lp/mono/)
+- Inter font (default) taken from [Inter](https://rsms.me/inter/)
+  - Both of these above two are under [SIL Open Font License 1.1](https://github.com/Mrmayman/quantumlauncher/tree/main/assets/licenses/OFL.txt)
+- Launcher icons designed by [Aurlt](https://github.com/Aurlt)
+- Password Censored font from [Password Asterisks](https://fontstruct.com/fontstructions/show/2362923/password-asterisks)
+- Twemoji font (emoji) from [Mozilla](https://github.com/mozilla/twemoji-colr/)
+  - Emoji artwork is by Twitter/X (licensed under CC BY 4.0)
+  - Font compilation is by Mozilla (licensed under Apache 2.0).

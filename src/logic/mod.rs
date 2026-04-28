@@ -2,15 +2,53 @@ use iced::{
     Task,
     widget::{self, operation, selector},
 };
+use tokio::task::spawn_blocking;
 use whatsmeow_nchat::MsgId;
 
 use crate::{
-    core::{App, Message},
+    core::{App, IntoStringError, Message},
     state::{ChatJumpAnimation, State},
 };
 
 impl App {
-    pub(super) fn scroll_to_reply(&mut self, msg_id: MsgId) -> Task<Message> {
+    pub fn send_msg(&mut self) -> Task<Message> {
+        let State::Chats(_, Some(chat)) = &mut self.state else {
+            return Task::none();
+        };
+        let chat_id = chat.selected.clone();
+        let Some(contents) = self.message_drafts.remove(&chat_id) else {
+            return Task::none();
+        };
+        if contents.text.is_empty() {
+            return Task::none();
+        }
+        let id = self.id;
+
+        Task::perform(
+            spawn_blocking(move || {
+                let reply = contents.reply_to.map(|n| whatsmeow_nchat::QuotedMessage {
+                    sender: n.sender,
+                    contents: n.text.into_iter().fold(String::new(), |mut accum, span| {
+                        accum.push_str(&span.text);
+                        accum
+                    }),
+                    message_id: n.id,
+                });
+                whatsmeow_nchat::send_message(
+                    id,
+                    &chat_id,
+                    &contents.text,
+                    reply.as_ref(),
+                    None::<(&std::path::Path, _)>,
+                    None,
+                )
+                .strerr()
+            }),
+            |n| Message::Done(n.strerr().and_then(|n| n)),
+        )
+    }
+
+    pub fn scroll_to_reply(&mut self, msg_id: MsgId) -> Task<Message> {
         let widget_id = format!("msg:{}", msg_id.0);
         if let State::Chats(_, Some(ui)) = &mut self.state {
             ui.animation_jump = Some(ChatJumpAnimation::new(msg_id));
@@ -18,7 +56,7 @@ impl App {
         scroll_into_view("messages", widget_id)
     }
 
-    pub(super) fn scroll_to_reply_done(
+    pub fn scroll_to_reply_done(
         &mut self,
         offset: iced::widget::operation::AbsoluteOffset<Option<f32>>,
     ) {

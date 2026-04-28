@@ -6,7 +6,7 @@ use whatsmeow_nchat::{Jid, MsgId};
 use crate::{
     Message, jid,
     storage::{Data, Time},
-    view::chat_buffer::db_load::load_chats_from_db,
+    view::{chat_buffer::db_load::load_chats_from_db, rich_text::rich_text},
 };
 
 mod db_load;
@@ -92,7 +92,7 @@ impl ChatBuffer {
 
             let rendered = RenderedMessage {
                 message: RMessageCore {
-                    text: message.content,
+                    text: rich_text(&message.content),
                     // TODO: collapse name for multiple messages in a row
                     sender_name: db.display_jid(&jid!(message.sender)).to_owned(),
                     sender: jid!(message.sender),
@@ -103,7 +103,7 @@ impl ChatBuffer {
                     .remove(&message.msg_id)
                     .and_then(|reply| Jid::parse(&reply.sender).map(|jid| (reply, jid)))
                     .map(|(reply, sender)| RMessageCore {
-                        text: reply.content,
+                        text: rich_text(&reply.content),
                         sender_name: db.display_jid(&sender).to_owned(),
                         sender,
                         id: MsgId(reply.msg_id),
@@ -217,7 +217,7 @@ pub struct RenderedReaction {
 
 #[derive(Clone, Debug)]
 pub struct RMessageCore {
-    pub text: String,
+    pub text: Vec<iced::widget::text::Span<'static>>,
     pub id: MsgId,
     pub sender: Jid,
     pub sender_name: String,

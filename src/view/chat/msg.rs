@@ -5,7 +5,7 @@ use iced::{
 use whatsmeow_nchat::Jid;
 
 use crate::{
-    Element,
+    Element, FONT_EMOJI,
     core::{App, Message},
     state::ChatUI,
     stylesheet::{
@@ -72,7 +72,7 @@ impl App {
         let content = column![
             view_reply(msg),
             show_top_bar.then(|| msg_header(msg)),
-            widget::text(&msg.message.text).shaping(Shaping::Advanced),
+            widget::rich_text(&msg.message.text),
             (!show_top_bar).then(|| msg_footer(msg))
         ]
         .align_x(if msg.from_me {
@@ -121,7 +121,10 @@ fn reactions(msg: &RenderedMessage) -> impl Iterator<Item = Element<'_>> + '_ {
                 n.sender.clone()
             )
             .size(10),
-            widget::text(&n.emoji).size(14).shaping(Shaping::Advanced)
+            widget::text(&n.emoji)
+                .size(14)
+                .shaping(Shaping::Advanced)
+                .font(FONT_EMOJI)
         ]
         .align_y(Alignment::Center)
         .spacing(5)
@@ -167,7 +170,7 @@ fn view_reply(msg: &RenderedMessage) -> Option<widget::Column<'_, Message, Theme
             widget::button(column![
                 // sender_link(&msg.message.sender_name, msg.message.sender.clone()),
                 widget::text(&reply.sender_name).size(12).style(tsubtitle),
-                widget::text(&reply.text).shaping(Shaping::Advanced),
+                widget::rich_text(&reply.text)
             ])
             .style(|t: &Theme, s| t.style_button(
                 s,

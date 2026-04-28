@@ -43,6 +43,7 @@ mod view;
 
 pub const FONT_MONO: iced::Font = iced::Font::with_name("JetBrains Mono");
 pub const FONT_DEFAULT: iced::Font = iced::Font::with_name("Inter");
+pub const FONT_EMOJI: iced::Font = iced::Font::with_name("Twemoji Mozilla");
 
 type Element<'a> = iced::Element<'a, Message, Theme>;
 type Res<T = ()> = Result<T, String>;
@@ -167,36 +168,7 @@ impl App {
                 }
             }
             Message::ChatSend => {
-                if let State::Chats(_, Some(chat)) = &mut self.state {
-                    let chat_id = chat.selected.clone();
-                    let Some(contents) = self.message_drafts.remove(&chat_id) else {
-                        return Ok(Task::none());
-                    };
-                    if contents.text.is_empty() {
-                        return Ok(Task::none());
-                    }
-                    let id = self.id;
-
-                    return Ok(Task::perform(
-                        spawn_blocking(move || {
-                            let reply = contents.reply_to.map(|n| whatsmeow_nchat::QuotedMessage {
-                                sender: n.sender,
-                                contents: n.text,
-                                message_id: n.id,
-                            });
-                            whatsmeow_nchat::send_message(
-                                id,
-                                &chat_id,
-                                &contents.text,
-                                reply.as_ref(),
-                                None::<(&std::path::Path, _)>,
-                                None,
-                            )
-                            .strerr()
-                        }),
-                        |n| Message::Done(n.strerr().and_then(|n| n)),
-                    ));
-                }
+                return Ok(self.send_msg());
             }
             Message::ChatBufferLoaded(r) => {
                 if let State::Chats(_, Some(chat)) = &mut self.state {
@@ -399,7 +371,21 @@ fn main() {
 
 fn load_fonts() -> Vec<Cow<'static, [u8]>> {
     vec![
+        // Inter
         include_bytes!("../assets/fonts/Inter-Regular.ttf")
+            .as_slice()
+            .into(),
+        include_bytes!("../assets/fonts/Inter-Bold.ttf")
+            .as_slice()
+            .into(),
+        include_bytes!("../assets/fonts/Inter-Italic.ttf")
+            .as_slice()
+            .into(),
+        include_bytes!("../assets/fonts/Inter-BoldItalic.ttf")
+            .as_slice()
+            .into(),
+        // Other
+        include_bytes!("../assets/fonts/Twemoji.Mozilla.ttf")
             .as_slice()
             .into(),
         include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf")

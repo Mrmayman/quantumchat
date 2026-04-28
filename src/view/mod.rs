@@ -13,6 +13,7 @@ use crate::{
 pub mod chat;
 pub mod chat_buffer;
 mod components;
+mod rich_text;
 
 impl App {
     pub fn view(&self) -> Element<'_> {
